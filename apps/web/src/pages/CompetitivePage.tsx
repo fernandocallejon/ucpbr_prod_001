@@ -114,7 +114,7 @@ export default function CompetitivePage() {
 
   const chartData = [
     { name: "Mais barato", value: stats.cheaperCount, fill: "#22c55e" },
-    { name: "Match", value: stats.matchCount, fill: "#6366f1" },
+    { name: "Match", value: stats.matchCount, fill: "#262626" },
     { name: "Mais caro", value: stats.moreExpensiveCount, fill: "#ef4444" },
   ];
 

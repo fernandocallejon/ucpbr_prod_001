@@ -8,7 +8,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import {
   CreditCard,
   CheckCircle2,
-  Zap,
   ArrowRight,
   FileText,
   Download,

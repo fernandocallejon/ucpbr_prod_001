@@ -5,7 +5,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import { Zap } from "lucide-react";
+
 
 export default function RegisterPage() {
   const { register } = useAuth();
@@ -48,9 +48,7 @@ export default function RegisterPage() {
     <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4 py-12">
       <div className="w-full max-w-lg space-y-8">
         <div className="flex flex-col items-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-600">
-            <Zap className="h-7 w-7 text-white" />
-          </div>
+          <img src="/logo.png" alt="UCP" className="h-12 w-12 rounded-xl object-contain" />
           <h2 className="mt-4 text-2xl font-bold">Criar conta RetailNexus</h2>
           <p className="mt-2 text-sm text-gray-500">
             Já tem conta?{" "}

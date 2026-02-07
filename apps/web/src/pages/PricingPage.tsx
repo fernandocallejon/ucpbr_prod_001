@@ -14,7 +14,6 @@ import {
   TrendingUp,
   Target,
   Percent,
-  Zap,
 } from "lucide-react";
 import { cn, formatCurrency } from "@/lib/utils";
 

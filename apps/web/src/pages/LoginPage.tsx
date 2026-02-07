@@ -5,7 +5,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import { Zap } from "lucide-react";
+
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -34,9 +34,7 @@ export default function LoginPage() {
       {/* Left side — branding */}
       <div className="hidden w-1/2 flex-col justify-between bg-brand-950 p-12 lg:flex">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-600">
-            <Zap className="h-6 w-6 text-white" />
-          </div>
+          <img src="/logo.png" alt="UCP" className="h-10 w-10 rounded-lg object-contain" />
           <span className="text-2xl font-bold text-white">RetailNexus</span>
         </div>
         <div>
@@ -62,9 +60,7 @@ export default function LoginPage() {
       <div className="flex w-full items-center justify-center px-6 lg:w-1/2">
         <div className="w-full max-w-md space-y-8">
           <div className="lg:hidden flex items-center gap-3 justify-center mb-8">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-600">
-              <Zap className="h-6 w-6 text-white" />
-            </div>
+            <img src="/logo.png" alt="UCP" className="h-10 w-10 rounded-lg object-contain" />
             <span className="text-2xl font-bold">RetailNexus</span>
           </div>
 

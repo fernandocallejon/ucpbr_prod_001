@@ -11,9 +11,9 @@
     "build": "npm run build --workspaces --if-present",
     "build:shared": "npm run build -w packages/shared",
     "build:api": "npm run build -w apps/api",
-    "build:price-engine": "npm run build -w apps/price-engine",
+    "build:web": "npm run build -w apps/web",
     "dev:api": "npm run dev -w apps/api",
-    "dev:price-engine": "npm run dev -w apps/price-engine",
+    "dev:web": "npm run dev -w apps/web",
     "lint": "npm run lint --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "clean": "rm -rf node_modules packages/*/node_modules apps/*/node_modules packages/*/dist apps/*/dist"

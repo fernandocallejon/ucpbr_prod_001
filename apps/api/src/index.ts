@@ -4,6 +4,7 @@
 // ============================================================
 
 // HTTP Functions
+import "./functions/health.functions.js";
 import "./functions/auth.functions.js";
 import "./functions/tenant.functions.js";
 import "./functions/store.functions.js";

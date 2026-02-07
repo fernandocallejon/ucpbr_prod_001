@@ -168,12 +168,12 @@ export default function DashboardPage() {
                 <linearGradient id="ucpGrad" x1="0" y1="0" x2="0" y2="1">
                   <stop
                     offset="5%"
-                    stopColor="var(--color-brand-500, #6366f1)"
+                    stopColor="#262626"
                     stopOpacity={0.3}
                   />
                   <stop
                     offset="95%"
-                    stopColor="var(--color-brand-500, #6366f1)"
+                    stopColor="#262626"
                     stopOpacity={0}
                   />
                 </linearGradient>
@@ -185,7 +185,7 @@ export default function DashboardPage() {
               <Area
                 type="monotone"
                 dataKey="score"
-                stroke="#6366f1"
+                stroke="#262626"
                 fill="url(#ucpGrad)"
                 strokeWidth={2}
                 name="UCP Score"
@@ -246,7 +246,7 @@ export default function DashboardPage() {
             <Tooltip />
             <Bar
               dataKey="products"
-              fill="#6366f1"
+              fill="#262626"
               radius={[4, 4, 0, 0]}
               name="Produtos"
             />
