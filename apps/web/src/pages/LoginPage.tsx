@@ -33,21 +33,46 @@ export default function LoginPage() {
     <div className="flex min-h-screen">
       {/* Left side — branding */}
       <div className="hidden w-1/2 flex-col items-center justify-center bg-black p-12 lg:flex">
-        <img src="/logo.png" alt="UCPBR" className="h-40 w-40 object-contain" />
-        <div className="mt-10 text-center">
-          <h1 className="text-3xl font-bold leading-tight text-white">
-            Domine o UCP do Google.
-          </h1>
-          <p className="mt-2 text-lg text-gray-400">
-            Seja a recomendação #1.
-          </p>
-          <p className="mt-4 max-w-md text-sm text-gray-500">
-            Precificação dinâmica e competitiva para e-commerce. Conecte sua
-            loja, monitore concorrentes e deixe a IA do Google trabalhar
-            para você.
-          </p>
+        <img src="/logo.png" alt="UCPBR" className="h-56 w-56 object-contain drop-shadow-2xl" />
+
+        <h1 className="mt-10 text-center text-4xl font-extrabold leading-tight tracking-tight text-white">
+          Venda mais.<br />Pague menos por clique.
+        </h1>
+        <p className="mt-3 max-w-md text-center text-lg text-gray-300">
+          A plataforma que coloca seus produtos na <span className="font-semibold text-white">recomendação #1 do Google Shopping</span> — automaticamente.
+        </p>
+
+        {/* Value props */}
+        <div className="mt-10 grid max-w-lg grid-cols-3 gap-6 text-center">
+          <div>
+            <p className="text-3xl font-bold text-white">3 min</p>
+            <p className="mt-1 text-xs text-gray-500">Para conectar sua loja</p>
+          </div>
+          <div>
+            <p className="text-3xl font-bold text-white">100%</p>
+            <p className="mt-1 text-xs text-gray-500">Automático, sem planilhas</p>
+          </div>
+          <div>
+            <p className="text-3xl font-bold text-white">+40%</p>
+            <p className="mt-1 text-xs text-gray-500">Mais visibilidade média</p>
+          </div>
         </div>
-        <p className="mt-auto text-sm text-gray-600">
+
+        <div className="mt-10 max-w-md space-y-3">
+          {[
+            "Conecte a loja → sincronização instantânea de produtos",
+            "Precificação dinâmica que reage aos concorrentes em tempo real",
+            "Sinais UCP otimizados: GTIN, frete, devoluções, preço",
+            "Dashboard com score UCP e inteligência competitiva",
+          ].map((item) => (
+            <div key={item} className="flex items-start gap-2.5">
+              <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/10 text-xs text-white">✓</span>
+              <span className="text-sm text-gray-400">{item}</span>
+            </div>
+          ))}
+        </div>
+
+        <p className="mt-auto text-xs text-gray-700">
           © 2026 UCPBR. Todos os direitos reservados.
         </p>
       </div>
@@ -56,7 +81,7 @@ export default function LoginPage() {
       <div className="flex w-full items-center justify-center px-6 lg:w-1/2">
         <div className="w-full max-w-md space-y-8">
           <div className="lg:hidden flex flex-col items-center mb-8">
-            <img src="/logo.png" alt="UCPBR" className="h-20 w-20 object-contain" />
+            <img src="/logo.png" alt="UCPBR" className="h-24 w-24 object-contain" />
           </div>
 
           <div>
