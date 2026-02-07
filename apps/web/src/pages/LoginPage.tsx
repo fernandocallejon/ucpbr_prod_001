@@ -32,47 +32,40 @@ export default function LoginPage() {
   return (
     <div className="flex min-h-screen">
       {/* Left side — branding */}
-      <div className="hidden w-1/2 flex-col items-center justify-center bg-black p-12 lg:flex">
-        <img src="/logo.png" alt="UCPBR" className="h-56 w-56 object-contain drop-shadow-2xl" />
+      <div className="hidden w-1/2 flex-col items-center bg-black px-10 py-12 lg:flex">
+        <div className="flex flex-1 flex-col items-center justify-center">
+          <img src="/logo.png" alt="UCPBR" className="h-56 w-56 object-contain drop-shadow-2xl" />
 
-        <h1 className="mt-10 text-center text-4xl font-extrabold leading-tight tracking-tight text-white">
-          Venda mais.<br />Pague menos por clique.
-        </h1>
-        <p className="mt-3 max-w-md text-center text-lg text-gray-300">
-          A plataforma que coloca seus produtos na <span className="font-semibold text-white">recomendação #1 do Google Shopping</span> — automaticamente.
-        </p>
+          <h1 className="mt-8 text-center text-2xl font-bold leading-snug text-white">
+            Seus concorrentes já estão no topo<br />do Google Shopping.<br />
+            <span className="text-gray-400">E você?</span>
+          </h1>
+          <p className="mt-3 max-w-sm text-center text-sm text-gray-500">
+            O UCPBR conecta sua loja, analisa o mercado e posiciona seus produtos como <span className="text-gray-300">a escolha recomendada pelo Google</span> — sem esforço manual.
+          </p>
 
-        {/* Value props */}
-        <div className="mt-10 grid max-w-lg grid-cols-3 gap-6 text-center">
-          <div>
-            <p className="text-3xl font-bold text-white">3 min</p>
-            <p className="mt-1 text-xs text-gray-500">Para conectar sua loja</p>
-          </div>
-          <div>
-            <p className="text-3xl font-bold text-white">100%</p>
-            <p className="mt-1 text-xs text-gray-500">Automático, sem planilhas</p>
-          </div>
-          <div>
-            <p className="text-3xl font-bold text-white">+40%</p>
-            <p className="mt-1 text-xs text-gray-500">Mais visibilidade média</p>
+          {/* Step cards */}
+          <div className="mt-10 flex w-full max-w-md flex-col gap-3">
+            {[
+              { step: "1", title: "Conecte sua loja", desc: "Shopify, VTEX, Nuvemshop, WooCommerce… integração em 3 minutos.", icon: "🔗" },
+              { step: "2", title: "Análise automática", desc: "Escaneamos concorrentes, preços e sinais UCP em tempo real.", icon: "📊" },
+              { step: "3", title: "Precificação inteligente", desc: "Ajuste automático de preços para maximizar margem e visibilidade.", icon: "⚡" },
+              { step: "4", title: "Domine o Google Shopping", desc: "Seus produtos ganham o selo de recomendação e mais cliques qualificados.", icon: "🏆" },
+            ].map((s) => (
+              <div key={s.step} className="flex items-start gap-4 rounded-xl bg-white/[0.04] px-4 py-3 backdrop-blur-sm">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 text-base">
+                  {s.icon}
+                </span>
+                <div>
+                  <p className="text-sm font-semibold text-white">{s.title}</p>
+                  <p className="mt-0.5 text-xs leading-relaxed text-gray-500">{s.desc}</p>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
-        <div className="mt-10 max-w-md space-y-3">
-          {[
-            "Conecte a loja → sincronização instantânea de produtos",
-            "Precificação dinâmica que reage aos concorrentes em tempo real",
-            "Sinais UCP otimizados: GTIN, frete, devoluções, preço",
-            "Dashboard com score UCP e inteligência competitiva",
-          ].map((item) => (
-            <div key={item} className="flex items-start gap-2.5">
-              <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/10 text-xs text-white">✓</span>
-              <span className="text-sm text-gray-400">{item}</span>
-            </div>
-          ))}
-        </div>
-
-        <p className="mt-auto text-xs text-gray-700">
+        <p className="mt-6 text-[11px] text-gray-700">
           © 2026 UCPBR. Todos os direitos reservados.
         </p>
       </div>
