@@ -12,6 +12,37 @@ param location string = resourceGroup().location
 @description('Project name prefix')
 param projectName string = 'retailnexus'
 
+// ─── Secrets (set via Key Vault or deployment params) ───
+@secure()
+param jwtSecret string
+
+@secure()
+param api2cartApiKey string
+
+@secure()
+param serperApiKey string
+
+@secure()
+param stripeSecretKey string
+
+@secure()
+param stripeWebhookSecret string
+
+@secure()
+param googleClientId string = ''
+
+@secure()
+param googleClientSecret string = ''
+
+param googleRedirectUri string = ''
+param googleMerchantId string = ''
+param googleClientEmail string = ''
+
+@secure()
+param googlePrivateKey string = ''
+
+param googleIndexingQuotaPerDay string = '200'
+
 // ─── Variables ───
 var prefix = '${projectName}-${environment}'
 var tags = {
@@ -235,6 +266,70 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
           name: 'NODE_ENV'
           value: environment
         }
+        {
+          name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+          value: appInsights.properties.ConnectionString
+        }
+        {
+          name: 'JWT_SECRET'
+          value: jwtSecret
+        }
+        {
+          name: 'JWT_EXPIRY'
+          value: '24h'
+        }
+        {
+          name: 'API2CART_API_KEY'
+          value: api2cartApiKey
+        }
+        {
+          name: 'API2CART_BASE_URL'
+          value: 'https://api.api2cart.com/v1.1'
+        }
+        {
+          name: 'SERPER_API_KEY'
+          value: serperApiKey
+        }
+        {
+          name: 'SERPER_BASE_URL'
+          value: 'https://google.serper.dev'
+        }
+        {
+          name: 'GOOGLE_CLIENT_ID'
+          value: googleClientId
+        }
+        {
+          name: 'GOOGLE_CLIENT_SECRET'
+          value: googleClientSecret
+        }
+        {
+          name: 'GOOGLE_REDIRECT_URI'
+          value: googleRedirectUri
+        }
+        {
+          name: 'GOOGLE_MERCHANT_ID'
+          value: googleMerchantId
+        }
+        {
+          name: 'GOOGLE_CLIENT_EMAIL'
+          value: googleClientEmail
+        }
+        {
+          name: 'GOOGLE_PRIVATE_KEY'
+          value: googlePrivateKey
+        }
+        {
+          name: 'GOOGLE_INDEXING_QUOTA_PER_DAY'
+          value: googleIndexingQuotaPerDay
+        }
+        {
+          name: 'STRIPE_SECRET_KEY'
+          value: stripeSecretKey
+        }
+        {
+          name: 'STRIPE_WEBHOOK_SECRET'
+          value: stripeWebhookSecret
+        }
       ]
       cors: {
         allowedOrigins: [
@@ -242,6 +337,28 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
           'https://${prefix}-web.azurestaticapps.net'
         ]
       }
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// Azure Static Web Apps (Frontend)
+// ═══════════════════════════════════════════════════════════
+
+resource staticWebApp 'Microsoft.Web/staticSites@2023-12-01' = {
+  name: '${prefix}-web'
+  location: 'eastus2' // SWA has limited regions
+  tags: tags
+  sku: {
+    name: environment == 'prod' ? 'Standard' : 'Free'
+    tier: environment == 'prod' ? 'Standard' : 'Free'
+  }
+  properties: {
+    stagingEnvironmentPolicy: 'Enabled'
+    allowConfigFileUpdates: true
+    buildProperties: {
+      appLocation: '/apps/web'
+      outputLocation: 'dist'
     }
   }
 }
@@ -315,3 +432,5 @@ output redisHostName string = redis.properties.hostName
 output serviceBusNamespace string = serviceBus.name
 output keyVaultName string = keyVault.name
 output appInsightsKey string = appInsights.properties.InstrumentationKey
+output staticWebAppUrl string = 'https://${staticWebApp.properties.defaultHostname}'
+output staticWebAppName string = staticWebApp.name
