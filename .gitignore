@@ -1,0 +1,32 @@
+node_modules/
+dist/
+.tsbuildinfo
+*.js.map
+
+# Azure Functions
+.azure/
+local.settings.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Build
+*.tgz
+coverage/
+.nyc_output/
+
+# Logs
+*.log
+npm-debug.log*
