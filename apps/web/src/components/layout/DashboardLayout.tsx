@@ -60,8 +60,8 @@ export default function DashboardLayout() {
       >
         {/* Logo */}
         <div className="flex h-16 items-center gap-3 px-6">
-          <img src="/logo.png" alt="UCP" className="h-9 w-9 rounded-lg object-contain" />
-          <span className="text-lg font-bold text-white">RetailNexus</span>
+          <img src="/logo.png" alt="UCPBR" className="h-9 w-9 object-contain" />
+          <span className="text-lg font-bold text-white">UCPBR</span>
           <button
             className="ml-auto lg:hidden"
             onClick={() => setSidebarOpen(false)}

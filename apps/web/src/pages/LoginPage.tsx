@@ -32,36 +32,31 @@ export default function LoginPage() {
   return (
     <div className="flex min-h-screen">
       {/* Left side — branding */}
-      <div className="hidden w-1/2 flex-col justify-between bg-brand-950 p-12 lg:flex">
-        <div className="flex items-center gap-3">
-          <img src="/logo.png" alt="UCP" className="h-10 w-10 rounded-lg object-contain" />
-          <span className="text-2xl font-bold text-white">RetailNexus</span>
-        </div>
-        <div>
-          <h1 className="text-4xl font-bold leading-tight text-white">
+      <div className="hidden w-1/2 flex-col items-center justify-center bg-black p-12 lg:flex">
+        <img src="/logo.png" alt="UCPBR" className="h-40 w-40 object-contain" />
+        <div className="mt-10 text-center">
+          <h1 className="text-3xl font-bold leading-tight text-white">
             Domine o UCP do Google.
-            <br />
-            <span className="text-brand-400">
-              Seja a recomendação #1.
-            </span>
           </h1>
-          <p className="mt-4 max-w-md text-lg text-brand-200">
+          <p className="mt-2 text-lg text-gray-400">
+            Seja a recomendação #1.
+          </p>
+          <p className="mt-4 max-w-md text-sm text-gray-500">
             Precificação dinâmica e competitiva para e-commerce. Conecte sua
             loja, monitore concorrentes e deixe a IA do Google trabalhar
             para você.
           </p>
         </div>
-        <p className="text-sm text-brand-400">
-          © 2026 RetailNexus. Todos os direitos reservados.
+        <p className="mt-auto text-sm text-gray-600">
+          © 2026 UCPBR. Todos os direitos reservados.
         </p>
       </div>
 
       {/* Right side — form */}
       <div className="flex w-full items-center justify-center px-6 lg:w-1/2">
         <div className="w-full max-w-md space-y-8">
-          <div className="lg:hidden flex items-center gap-3 justify-center mb-8">
-            <img src="/logo.png" alt="UCP" className="h-10 w-10 rounded-lg object-contain" />
-            <span className="text-2xl font-bold">RetailNexus</span>
+          <div className="lg:hidden flex flex-col items-center mb-8">
+            <img src="/logo.png" alt="UCPBR" className="h-20 w-20 object-contain" />
           </div>
 
           <div>

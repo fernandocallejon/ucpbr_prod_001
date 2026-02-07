@@ -48,8 +48,8 @@ export default function RegisterPage() {
     <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4 py-12">
       <div className="w-full max-w-lg space-y-8">
         <div className="flex flex-col items-center">
-          <img src="/logo.png" alt="UCP" className="h-12 w-12 rounded-xl object-contain" />
-          <h2 className="mt-4 text-2xl font-bold">Criar conta RetailNexus</h2>
+          <img src="/logo.png" alt="UCPBR" className="h-16 w-16 object-contain" />
+          <h2 className="mt-4 text-2xl font-bold">Criar conta</h2>
           <p className="mt-2 text-sm text-gray-500">
             Já tem conta?{" "}
             <Link
