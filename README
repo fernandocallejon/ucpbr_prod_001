@@ -1,0 +1,124 @@
+
+---
+
+# UCPBR: Arquitetura Deep Dive
+
+## 1. O Fluxo de Entrada: Integração via API2Cart
+O **API2Cart** funcionará como a "Ponte Universal". Para o seu sistema, não importa se o cliente usa Magento, Shopify ou VTEX; o API2Cart normaliza tudo para um formato único.
+
+### A. A Experiência do Cliente (Frontend)
+1.  **Login na RetailNexus:** O cliente acessa seu painel.
+2.  **Add Store:** Ele vê uma lista de logos (Shopify, Woocommerce, VTEX, Magento).
+3.  **Conexão (OAuth/Chaves):**
+    *   *Exemplo Shopify:* O cliente clica, é redirecionado para a Shopify, autoriza o app e volta.
+    *   *Exemplo WooCommerce:* O cliente insere a URL da loja, Consumer Key e Consumer Secret.
+4.  **Mapeamento de Regras:** O cliente define: "Margem Mínima de Segurança" (ex: nunca vender abaixo do custo + 10%).
+
+### B. O Processo Técnico (Backend - Azure Functions)
+Assim que o cliente conecta, uma Azure Function inicia o processo de **Sincronização Inicial**:
+
+1.  **Chamada `product.list` (API2Cart):**
+    *   O sistema puxa todos os produtos.
+    *   **Dados cruciais extraídos:** `id`, `name`, `sku`, `ean` (GTIN), `price` (preço de venda atual), `quantity` (estoque).
+    *   *Nota:* O `cost_price` (preço de custo) às vezes não está disponível na API padrão da plataforma de e-commerce. Se não estiver, sua plataforma solicitará que o cliente suba um CSV simples ou preencha isso no painel para habilitar a precificação dinâmica.
+
+2.  **Registro de Webhooks:**
+    *   Seu sistema envia para o API2Cart a ordem: "Me avise se algo mudar".
+    *   **Gatilho `product.update`:** Se o lojista mudar o nome ou preço manualmente na loja dele, o API2Cart avisa seu sistema via Webhook, e você atualiza seu banco de dados imediatamente. Isso evita que você oferte um produto com preço errado.
+
+3.  **Normalização no Azure Cosmos DB:**
+    *   O dado entra "sujo" e é salvo limpo no seu banco:
+    *   `Produto A (Shopify)` -> vira -> `Objeto Universal RetailNexus` com EAN validado.
+
+---
+
+## 2. O Motor de Inteligência: Serper API
+Aqui está a grande mudança. Em vez de "raspar" sites aleatórios, nós perguntamos ao Google (via Serper) quem está ganhando o jogo *agora*.
+
+### A. A Estratégia de Consulta (Batch Processing)
+Não podemos consultar a Serper a cada milissegundo (seria caro e desnecessário). Usaremos o **Azure Batch** para criar filas de atualização baseadas no plano do cliente.
+
+1.  **O Gatilho:**
+    *   O sistema pega o EAN do produto do cliente (ex: iPhone 15).
+2.  **A Consulta Serper:**
+    *   Query enviada: `buy [Nome do Produto] [EAN]` ou consulta direta na aba `shopping`.
+    *   Parâmetros: Localização (Brasil/US), Moeda.
+3.  **O Retorno Estruturado:**
+    *   A Serper devolve um JSON com a lista do Google Shopping:
+        *   `Position 1`: Amazon - R$ 4.900,00
+        *   `Position 2`: Mercado Livre - R$ 4.950,00
+        *   `Position 3`: Site do Seu Cliente - R$ 5.000,00 (Perdendo)
+4.  **Análise de Oportunidade:**
+    *   O sistema identifica o **Preço Vencedor (Winning Price)**: R$ 4.900,00.
+
+---
+
+## 3. O Núcleo de Decisão: Algoritmo de Precificação (MCP Core)
+Este processamento ocorre dentro de Azure Container Apps, isolado para máxima performance.
+
+**Lógica de Execução:**
+1.  **Input:** Preço Vencedor (R$ 4.900) vs. Custo do Cliente + Margem (R$ 4.500).
+2.  **Cálculo:** Posso bater o preço?
+    *   Sim (4900 > 4500).
+    *   Novo Preço Alvo: R$ 4.899,00 (Undercutting strategy).
+3.  **Ação Dupla:**
+    *   **Ação 1 (Update Loja):** Chama API2Cart (`product.update`) e muda o preço na loja real do cliente (Shopify/VTEX) para R$ 4.899. Isso garante que se o usuário clicar, o preço no checkout será o prometido.
+    *   **Ação 2 (Cache MCP):** Grava no **Hot Cache (Redis/Cosmos)**: "Para este EAN, o melhor preço é meu".
+
+---
+
+## 4. O Produto Final: O Endpoint MCP (A "Isca" para IA)
+Quando o Google Gemini (UCP) ou o Bing varrem a internet, ou quando um usuário faz uma busca assistida por IA, o seu sistema expõe os dados perfeitos.
+
+*   **Interceptação:** A ideia não é bloquear o Google, é *alimentá-lo* melhor que os outros.
+*   **Formato:** O RetailNexus gera um JSON-LD dinâmico ou disponibiliza um endpoint MCP compatível.
+*   **Conteúdo:**
+    ```json
+    {
+      "product": "iPhone 15",
+      "offer": {
+        "price": "4899.00",
+        "currency": "BRL",
+        "availability": "InStock",
+        "url": "https://loja-do-cliente.com.br/iphone-15?utm_source=retailnexus-mcp",
+        "seller_trust_score": 98 // Dado calculado pela sua plataforma
+      }
+    }
+    ```
+*   **Resultado:** A IA lê seu dado estruturado, vê que é o menor preço *atualizado há 2 minutos* e exibe seu cliente como a recomendação nº 1 ("Melhor preço encontrado").
+
+---
+
+## 5. Perfil Root: O Controlador do Sistema
+Como "Deus" da plataforma, o Root gerencia a orquestração macro.
+
+1.  **Dashboard de Integridade de APIs:**
+    *   Monitora as quotas da **API2Cart** e da **Serper**.
+    *   Visualiza erros de conexão (ex: token da loja do Cliente X expirou).
+2.  **Gestor de Margem Global:**
+    *   O Root pode definir regras de emergência. Ex: "Impedir qualquer precificação abaixo de X% de margem, independente da configuração do usuário", para evitar colapsos em flash sales.
+3.  **Controle de Frequência (Business Model Enforcer):**
+    *   Define quantas chamadas Serper cada plano pode fazer.
+    *   *Plano Basic:* O Root configura o Cron Job para rodar a cada 24h por SKU.
+    *   *Plano Enterprise:* O Root libera o monitoramento de eventos em tempo real.
+
+---
+
+## 6. Resumo da Infraestrutura Azure (Stack Tecnológico)
+
+1.  **Front-end:** Azure Static Web Apps (React/Vue). Onde o cliente vê os dashboards.
+2.  **API Gateway (Azure API Management):** Protege suas rotas e gerencia o tráfego de entrada.
+3.  **Backend Lógico:** Azure Functions (Node.js ou Python).
+    *   Function `SyncStore`: Conversa com API2Cart.
+    *   Function `MarketScanner`: Conversa com Serper.
+    *   Function `PriceEngine`: Decide o preço.
+4.  **Banco de Dados:**
+    *   **Azure Cosmos DB (NoSQL):** Armazena o estado atual de todos os produtos, configurações de clientes e histórico recente. Performance de milissegundos.
+5.  **Cache de Borda:** Azure Redis Cache. Usado para entregar a resposta ao UCP/Google instantaneamente.
+
+## Por que essa arquitetura vende?
+Você abstraiu a dor tecnológica do lojista.
+*   Ele não precisa saber o que é Serper.
+*   Ele não precisa programar Python.
+*   Ele só precisa conectar a loja (API2Cart resolve) e pagar o cartão de crédito.
+*   O sistema trabalha "enquanto ele dorme", guerreando centavo a centavo no Google Shopping usando a própria inteligência do Google contra os concorrentes.
