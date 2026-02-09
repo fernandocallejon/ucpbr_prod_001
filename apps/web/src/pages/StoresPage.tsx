@@ -58,9 +58,24 @@ export default function StoresPage() {
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [syncing, setSyncing] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState("");
 
   useEffect(() => {
     loadStores();
+
+    // Check if we just came back from OAuth bridge
+    const params = new URLSearchParams(window.location.search);
+    const connectedId = params.get("connected");
+    const error = params.get("error");
+    if (connectedId) {
+      setSuccessMsg("Loja conectada com sucesso via OAuth! A sincronização inicial foi iniciada.");
+      // Clean up URL
+      window.history.replaceState({}, "", window.location.pathname);
+    } else if (error) {
+      setSuccessMsg("");
+      // Could show error, for now just clean URL
+      window.history.replaceState({}, "", window.location.pathname);
+    }
   }, []);
 
   async function loadStores() {
@@ -112,6 +127,19 @@ export default function StoresPage() {
           Adicionar Loja
         </button>
       </div>
+
+      {/* OAuth Success Banner */}
+      {successMsg && (
+        <div className="rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-700 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="h-5 w-5 text-green-600" />
+            {successMsg}
+          </div>
+          <button onClick={() => setSuccessMsg("")} className="text-green-500 hover:text-green-700">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       {/* Store Cards */}
       {loading ? (
@@ -224,15 +252,23 @@ function AddStoreModal({
   onClose: () => void;
   onAdded: () => void;
 }) {
-  const [step, setStep] = useState<"platform" | "details">("platform");
+  const [step, setStep] = useState<"platform" | "method" | "oauth" | "manual">("platform");
   const [platform, setPlatform] = useState("");
   const [form, setForm] = useState({ storeName: "", storeUrl: "", apiKey: "", apiPassword: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  // Platforms that support OAuth/Bridge flow through API2Cart
+  const oAuthPlatforms = ["shopify", "woocommerce", "magento", "vtex", "nuvemshop", "opencart"];
+
   function selectPlatform(id: string) {
     setPlatform(id);
-    setStep("details");
+    // If platform supports OAuth, show method selection; otherwise go straight to manual
+    if (oAuthPlatforms.includes(id)) {
+      setStep("method");
+    } else {
+      setStep("manual");
+    }
   }
 
   const platformHints: Record<string, { urlPlaceholder: string; keyLabel: string; keyPlaceholder: string; secretLabel: string; secretPlaceholder: string; help: string }> = {
@@ -311,7 +347,37 @@ function AddStoreModal({
     help: "",
   };
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleOAuthConnect(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      const res = await api.post<{
+        store: StoreItem;
+        bridgeDownloadUrl: string | null;
+        needsBridgeFile: boolean;
+        message: string;
+      }>("/api/stores/bridge", {
+        platform,
+        storeName: form.storeName,
+        storeUrl: form.storeUrl,
+      });
+      // If self-hosted platform needs bridge file, show instructions
+      if (res.needsBridgeFile && res.bridgeDownloadUrl) {
+        setError("");
+        alert(
+          `Loja conectada! Para plataformas self-hosted (${platformName}), instale o conector bridge:\n\n${res.bridgeDownloadUrl}\n\nBaixe o arquivo e faça upload para a raiz do seu servidor.`
+        );
+      }
+      onAdded();
+      onClose();
+    } catch (err: any) {
+      setError(err.message || "Erro ao conectar loja via bridge");
+      setLoading(false);
+    }
+  }
+
+  async function handleManualConnect(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     setLoading(true);
@@ -331,12 +397,17 @@ function AddStoreModal({
     }
   }
 
+  const platformName = PLATFORMS.find(p => p.id === platform)?.name || "Loja";
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="w-full max-w-lg rounded-xl bg-white shadow-xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between border-b px-6 py-4">
           <h3 className="text-lg font-semibold">
-            {step === "platform" ? "Escolha a Plataforma" : `Conectar ${PLATFORMS.find(p => p.id === platform)?.name || "Loja"}`}
+            {step === "platform" && "Escolha a Plataforma"}
+            {step === "method" && `Conectar ${platformName}`}
+            {step === "oauth" && `Conexão Rápida — ${platformName}`}
+            {step === "manual" && `Credenciais Manuais — ${platformName}`}
           </h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <X className="h-5 w-5" />
@@ -344,7 +415,8 @@ function AddStoreModal({
         </div>
 
         <div className="p-6">
-          {step === "platform" ? (
+          {/* Step 1: Platform Selection */}
+          {step === "platform" && (
             <div className="grid grid-cols-2 gap-3">
               {PLATFORMS.map((p) => (
                 <button
@@ -357,8 +429,134 @@ function AddStoreModal({
                 </button>
               ))}
             </div>
-          ) : (
-            <form onSubmit={handleSubmit} className="space-y-4">
+          )}
+
+          {/* Step 2: Connection Method Selection (OAuth vs Manual) */}
+          {step === "method" && (
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">
+                Escolha como deseja conectar sua loja <strong>{platformName}</strong>:
+              </p>
+
+              <button
+                onClick={() => setStep("oauth")}
+                className="w-full rounded-lg border-2 border-brand-200 bg-brand-50 px-4 py-4 text-left transition hover:border-brand-500"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-100 text-brand-600">
+                    <ExternalLink className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <p className="font-semibold text-gray-900">
+                      Conexão Rápida
+                      <span className="ml-2 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+                        Recomendado
+                      </span>
+                    </p>
+                    <p className="mt-0.5 text-xs text-gray-500">
+                      Conecte informando apenas nome e URL. A API2Cart configura a integração automaticamente.
+                    </p>
+                  </div>
+                </div>
+              </button>
+
+              <button
+                onClick={() => setStep("manual")}
+                className="w-full rounded-lg border-2 border-gray-200 px-4 py-4 text-left transition hover:border-gray-400"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-gray-500">
+                    🔑
+                  </span>
+                  <div>
+                    <p className="font-semibold text-gray-900">
+                      Credenciais Manuais
+                    </p>
+                    <p className="mt-0.5 text-xs text-gray-500">
+                      Insira manualmente as chaves de API da sua loja. Use se o OAuth não funcionar.
+                    </p>
+                  </div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                className="btn-secondary w-full"
+                onClick={() => { setPlatform(""); setStep("platform"); }}
+              >
+                ← Voltar
+              </button>
+            </div>
+          )}
+
+          {/* Step 3a: OAuth Flow (simplified form — just name + URL) */}
+          {step === "oauth" && (
+            <form onSubmit={handleOAuthConnect} className="space-y-4">
+              {error && (
+                <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>
+              )}
+
+              <div className="rounded-lg bg-green-50 border border-green-200 p-3 text-xs text-green-700">
+                <strong>Como funciona:</strong> Informe o nome e a URL da sua loja.
+                A API2Cart criará a conexão automaticamente. Para plataformas como
+                WooCommerce e Magento, pode ser necessário instalar um conector no servidor.
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Nome da Loja
+                </label>
+                <input
+                  className="input mt-1"
+                  value={form.storeName}
+                  onChange={(e) => setForm((f) => ({ ...f, storeName: e.target.value }))}
+                  placeholder="Minha Loja Online"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  URL da Loja
+                </label>
+                <input
+                  className="input mt-1"
+                  type="url"
+                  value={form.storeUrl}
+                  onChange={(e) => setForm((f) => ({ ...f, storeUrl: e.target.value }))}
+                  placeholder={hints.urlPlaceholder}
+                  required
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setStep("method")}
+                >
+                  Voltar
+                </button>
+                <button type="submit" className="btn-primary" disabled={loading}>
+                  {loading ? (
+                    <>
+                      <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                      Conectando...
+                    </>
+                  ) : (
+                    <>
+                      <ExternalLink className="mr-2 h-4 w-4" />
+                      Conectar {platformName}
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* Step 3b: Manual Credentials */}
+          {step === "manual" && (
+            <form onSubmit={handleManualConnect} className="space-y-4">
               {error && (
                 <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>
               )}
@@ -428,7 +626,7 @@ function AddStoreModal({
                 <button
                   type="button"
                   className="btn-secondary"
-                  onClick={() => setStep("platform")}
+                  onClick={() => oAuthPlatforms.includes(platform) ? setStep("method") : setStep("platform")}
                 >
                   Voltar
                 </button>

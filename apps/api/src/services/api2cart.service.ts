@@ -72,6 +72,47 @@ export class Api2CartService {
     await this.post("cart.delete.json", { store_key: storeKey });
   }
 
+  /**
+   * Get a Bridge connection from API2Cart.
+   * This creates the connection immediately and returns:
+   * - store_key: the connection key for API calls
+   * - bridge: URL to download the bridge connector file
+   *   (needed for self-hosted platforms like WooCommerce, Magento, OpenCart)
+   *
+   * For SaaS platforms (Shopify, Nuvemshop), credentials are still needed
+   * via cart.create.json for full data access.
+   *
+   * @see https://docs.api2cart.com/#cart-bridge
+   */
+  async getBridgeConnection(params: {
+    cartType: string;
+    storeUrl: string;
+    bridgeUrl?: string;
+    storeName?: string;
+  }): Promise<{ store_key: string; bridge_url: string }> {
+    const result = await this.post("cart.bridge.json", {
+      cart_id: params.cartType,
+      store_url: params.storeUrl,
+      bridge_url: params.bridgeUrl,
+      store_name: params.storeName,
+    });
+    return {
+      store_key: result?.store_key || "",
+      bridge_url: result?.bridge || "",
+    };
+  }
+
+  /**
+   * Validate that a store_key is valid and the connection is active.
+   */
+  async validateConnection(storeKey: string): Promise<{
+    cart_id: string;
+    store_url: string;
+    store_name?: string;
+  }> {
+    return this.get("cart.info.json", { store_key: storeKey });
+  }
+
   // ─── Products ───
 
   /**
