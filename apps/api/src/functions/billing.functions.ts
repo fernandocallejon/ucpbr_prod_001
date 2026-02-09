@@ -25,17 +25,18 @@ import { validateBody } from "../middleware/validation.js";
 import { getStripeService } from "../services/stripe.service.js";
 import { now } from "@retailnexus/shared";
 import { z } from "zod";
+import { rateLimit } from "../middleware/rate-limit.js";
 
 // ─── Schemas ───
 
 const checkoutSchema = z.object({
   plan: z.enum(["basic", "pro", "enterprise"]),
-  successUrl: z.string().url(),
-  cancelUrl: z.string().url(),
+  successUrl: z.string().url().optional(),
+  cancelUrl: z.string().url().optional(),
 });
 
 const portalSchema = z.object({
-  returnUrl: z.string().url(),
+  returnUrl: z.string().url().optional(),
 });
 
 // ─── Create Checkout Session ───
@@ -48,6 +49,9 @@ async function createCheckout(
   if (isErr(authResult)) return authResult;
   const user = authResult;
 
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
+
   try {
     const validation = await validateBody(req, checkoutSchema);
     if (isErr(validation)) return validation;
@@ -57,12 +61,14 @@ async function createCheckout(
     if (!tenant) return errorResponse("Tenant não encontrado", 404);
 
     const stripe = getStripeService();
+    const origin = req.headers.get("origin") || req.headers.get("referer") || "https://icy-beach-03da2f70f.4.azurestaticapps.net";
+    const baseUrl = origin.replace(/\/$/, "");
     const session = await stripe.createCheckoutSession({
       tenantId: tenant.id,
       email: tenant.email,
       plan: body.plan,
-      successUrl: body.successUrl,
-      cancelUrl: body.cancelUrl,
+      successUrl: body.successUrl || `${baseUrl}/billing?success=true`,
+      cancelUrl: body.cancelUrl || `${baseUrl}/billing?canceled=true`,
     });
 
     return successResponse(session);
@@ -81,6 +87,9 @@ async function getSubscription(
   const authResult = requireAuth(req);
   if (isErr(authResult)) return authResult;
   const user = authResult;
+
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
 
   try {
     const tenant = await tenantRepository.getById(user.tenantId, user.tenantId);
@@ -119,6 +128,9 @@ async function cancelSubscription(
   if (isErr(authResult)) return authResult;
   const user = authResult;
 
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
+
   try {
     const tenant = await tenantRepository.getById(user.tenantId, user.tenantId);
     if (!tenant) return errorResponse("Tenant não encontrado", 404);
@@ -148,6 +160,9 @@ async function resumeSubscription(
   const authResult = requireAuth(req);
   if (isErr(authResult)) return authResult;
   const user = authResult;
+
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
 
   try {
     const tenant = await tenantRepository.getById(user.tenantId, user.tenantId);
@@ -179,6 +194,9 @@ async function createPortal(
   if (isErr(authResult)) return authResult;
   const user = authResult;
 
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
+
   try {
     const validation = await validateBody(req, portalSchema);
     if (isErr(validation)) return validation;
@@ -192,9 +210,11 @@ async function createPortal(
     }
 
     const stripe = getStripeService();
+    const origin = req.headers.get("origin") || req.headers.get("referer") || "https://icy-beach-03da2f70f.4.azurestaticapps.net";
+    const returnUrl = body.returnUrl || `${origin.replace(/\/$/, "")}/billing`;
     const portal = await stripe.createPortalSession(
       tenant.billing.stripeCustomerId,
-      body.returnUrl
+      returnUrl
     );
 
     return successResponse(portal);
@@ -210,6 +230,9 @@ async function stripeWebhook(
   req: HttpRequest,
   context: InvocationContext
 ): Promise<HttpResponseInit> {
+  const limited = await rateLimit(req, "anonymous");
+  if (limited) return limited;
+
   try {
     const body = await req.text();
     const signature = req.headers.get("stripe-signature");
@@ -347,4 +370,42 @@ app.http("billing-webhook", {
   authLevel: "anonymous",
   route: "billing/webhook",
   handler: stripeWebhook,
+});
+
+// ─── Get Invoices ───
+
+async function getInvoices(
+  req: HttpRequest,
+  context: InvocationContext
+): Promise<HttpResponseInit> {
+  const authResult = requireAuth(req);
+  if (isErr(authResult)) return authResult;
+  const user = authResult;
+
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
+
+  try {
+    const tenant = await tenantRepository.getById(user.tenantId, user.tenantId);
+    if (!tenant) return errorResponse("Tenant não encontrado", 404);
+
+    if (!tenant.billing?.stripeCustomerId) {
+      return successResponse([]);
+    }
+
+    const stripe = getStripeService();
+    const invoices = await stripe.listInvoices(tenant.billing.stripeCustomerId);
+    return successResponse(invoices);
+  } catch (err: any) {
+    context.error("getInvoices error:", err);
+    // Return empty array on error to not break frontend
+    return successResponse([]);
+  }
+}
+
+app.http("billing-invoices", {
+  methods: ["GET"],
+  authLevel: "anonymous",
+  route: "billing/invoices",
+  handler: getInvoices,
 });

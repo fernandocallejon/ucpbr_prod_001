@@ -109,12 +109,12 @@ export default function BillingPage() {
   async function changePlan(planId: string) {
     setUpgrading(planId);
     try {
-      const res = await api.post<{ checkoutUrl?: string }>(
+      const res = await api.post<{ sessionId?: string; url?: string }>(
         "/api/billing/checkout",
         { plan: planId }
       );
-      if (res.checkoutUrl) {
-        window.location.href = res.checkoutUrl;
+      if (res.url) {
+        window.location.href = res.url;
       } else {
         await loadBilling();
       }
@@ -128,7 +128,8 @@ export default function BillingPage() {
   async function openPortal() {
     try {
       const { url } = await api.post<{ url: string }>(
-        "/api/billing/portal"
+        "/api/billing/portal",
+        { returnUrl: window.location.href }
       );
       window.location.href = url;
     } catch {

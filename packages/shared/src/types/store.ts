@@ -27,6 +27,7 @@ export type StorePlatform =
   | "nuvemshop"
   | "tray"
   | "loja_integrada"
+  | "opencart"
   | "other";
 
 export type StoreSyncStatus =

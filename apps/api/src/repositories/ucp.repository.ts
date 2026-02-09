@@ -175,6 +175,21 @@ class SellerProfileRepository extends BaseRepository<SellerProfile> {
   }
 }
 
+// ─── Pricing Rule Repository ───
+
+class PricingRuleRepository extends BaseRepository<any> {
+  constructor() {
+    super(containers.pricingRules, "tenantId" as any);
+  }
+
+  async listByTenant(tenantId: string): Promise<any[]> {
+    return this.query({
+      query: "SELECT * FROM c WHERE c.tenantId = @tenantId ORDER BY c.createdAt DESC",
+      parameters: [{ name: "@tenantId", value: tenantId }],
+    });
+  }
+}
+
 // ─── Exports (singletons) ───
 
 export const ucpSignalRepository = new UCPSignalRepository();
@@ -183,3 +198,4 @@ export const googleSyncLogRepository = new GoogleSyncLogRepository();
 export const competitorPriceRepository = new CompetitorPriceRepository();
 export const scanJobRepository = new ScanJobRepository();
 export const sellerProfileRepository = new SellerProfileRepository();
+export const pricingRuleRepository = new PricingRuleRepository();

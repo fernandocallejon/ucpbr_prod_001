@@ -13,6 +13,7 @@ import {
 import { storeRepository } from "../repositories/index.js";
 import { sendToQueue } from "../lib/service-bus.js";
 import { SERVICE_BUS_QUEUES } from "@retailnexus/shared";
+import { rateLimit } from "../middleware/rate-limit.js";
 
 /**
  * API2Cart sends webhook notifications when products change
@@ -23,6 +24,9 @@ async function api2cartWebhook(
   req: HttpRequest,
   context: InvocationContext
 ): Promise<HttpResponseInit> {
+  const limited = await rateLimit(req, "anonymous");
+  if (limited) return limited;
+
   try {
     const body = (await req.json()) as {
       store_key?: string;

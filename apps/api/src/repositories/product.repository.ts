@@ -18,7 +18,7 @@ class ProductRepository extends BaseRepository<Product> {
     return this.queryPaginated(
       {
         query:
-          "SELECT * FROM c WHERE c.tenantId = @tenantId AND c.type = 'product' ORDER BY c.updatedAt DESC",
+          "SELECT * FROM c WHERE c.tenantId = @tenantId ORDER BY c.updatedAt DESC",
         parameters: [{ name: "@tenantId", value: tenantId }],
       },
       params
@@ -31,7 +31,7 @@ class ProductRepository extends BaseRepository<Product> {
   ): Promise<Product[]> {
     return this.query({
       query:
-        "SELECT * FROM c WHERE c.tenantId = @tenantId AND c.storeId = @storeId AND c.type = 'product'",
+        "SELECT * FROM c WHERE c.tenantId = @tenantId AND c.storeId = @storeId",
       parameters: [
         { name: "@tenantId", value: tenantId },
         { name: "@storeId", value: storeId },
@@ -46,7 +46,7 @@ class ProductRepository extends BaseRepository<Product> {
   ): Promise<Product | null> {
     const results = await this.query({
       query:
-        "SELECT * FROM c WHERE c.tenantId = @tenantId AND c.storeId = @storeId AND c.externalId = @externalId AND c.type = 'product'",
+        "SELECT * FROM c WHERE c.tenantId = @tenantId AND c.storeId = @storeId AND c.externalId = @externalId",
       parameters: [
         { name: "@tenantId", value: tenantId },
         { name: "@storeId", value: storeId },
@@ -56,13 +56,13 @@ class ProductRepository extends BaseRepository<Product> {
     return results[0] || null;
   }
 
-  async getByGTIN(tenantId: string, gtin13: string): Promise<Product | null> {
+  async getByGTIN(tenantId: string, gtin: string): Promise<Product | null> {
     const results = await this.query({
       query:
-        "SELECT * FROM c WHERE c.tenantId = @tenantId AND c.gtin13 = @gtin13 AND c.type = 'product'",
+        "SELECT * FROM c WHERE c.tenantId = @tenantId AND c.gtin = @gtin",
       parameters: [
         { name: "@tenantId", value: tenantId },
-        { name: "@gtin13", value: gtin13 },
+        { name: "@gtin", value: gtin },
       ],
     });
     return results[0] || null;
@@ -71,7 +71,7 @@ class ProductRepository extends BaseRepository<Product> {
   async listActiveWithGTIN(tenantId: string): Promise<Product[]> {
     return this.query({
       query:
-        "SELECT * FROM c WHERE c.tenantId = @tenantId AND c.type = 'product' AND c.status = 'active' AND c.gtin13 != '' AND c.pricingRule.enabled = true",
+        "SELECT * FROM c WHERE c.tenantId = @tenantId AND c.status = 'active' AND IS_DEFINED(c.gtin) AND c.gtin != ''",
       parameters: [{ name: "@tenantId", value: tenantId }],
     });
   }
@@ -79,7 +79,7 @@ class ProductRepository extends BaseRepository<Product> {
   async listWithoutGTIN(tenantId: string): Promise<Product[]> {
     return this.query({
       query:
-        "SELECT * FROM c WHERE c.tenantId = @tenantId AND c.type = 'product' AND (c.gtin13 = '' OR NOT IS_DEFINED(c.gtin13))",
+        "SELECT * FROM c WHERE c.tenantId = @tenantId AND (NOT IS_DEFINED(c.gtin) OR c.gtin = '')",
       parameters: [{ name: "@tenantId", value: tenantId }],
     });
   }
@@ -87,7 +87,7 @@ class ProductRepository extends BaseRepository<Product> {
   async countByTenant(tenantId: string): Promise<number> {
     const results = await this.query({
       query:
-        "SELECT VALUE COUNT(1) FROM c WHERE c.tenantId = @tenantId AND c.type = 'product'",
+        "SELECT VALUE COUNT(1) FROM c WHERE c.tenantId = @tenantId",
       parameters: [{ name: "@tenantId", value: tenantId }],
     });
     return (results[0] as unknown as number) || 0;
@@ -101,7 +101,7 @@ class ProductRepository extends BaseRepository<Product> {
     const total = await this.countByTenant(tenantId);
     const withGTINResults = await this.query({
       query:
-        "SELECT VALUE COUNT(1) FROM c WHERE c.tenantId = @tenantId AND c.type = 'product' AND c.gtin13 != '' AND IS_DEFINED(c.gtin13)",
+        "SELECT VALUE COUNT(1) FROM c WHERE c.tenantId = @tenantId AND IS_DEFINED(c.gtin) AND c.gtin != ''",
       parameters: [{ name: "@tenantId", value: tenantId }],
     });
     const withGTIN = (withGTINResults[0] as unknown as number) || 0;
@@ -118,9 +118,8 @@ class ProductRepository extends BaseRepository<Product> {
     newPrice: number
   ): Promise<Product | null> {
     return this.update(id, tenantId, {
-      currentPrice: newPrice,
-      priceLastUpdatedAt: new Date().toISOString(),
-      priceValidUntil: getTomorrowISO(),
+      price: newPrice,
+      updatedAt: new Date().toISOString(),
     } as Partial<Product>);
   }
 
@@ -133,12 +132,6 @@ class ProductRepository extends BaseRepository<Product> {
       competitiveData: data,
     } as Partial<Product>);
   }
-}
-
-function getTomorrowISO(): string {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  return d.toISOString().split("T")[0];
 }
 
 export const productRepository = new ProductRepository();

@@ -24,6 +24,7 @@ import { generateId, now, PLAN_LIMITS } from "@retailnexus/shared";
 import type { Tenant, CreateTenantInput } from "@retailnexus/shared";
 import { z } from "zod";
 import * as bcrypt from "bcryptjs";
+import { rateLimit } from "../middleware/rate-limit.js";
 
 // ─── Schemas ───
 
@@ -46,6 +47,9 @@ async function register(
   req: HttpRequest,
   context: InvocationContext
 ): Promise<HttpResponseInit> {
+  const limited = await rateLimit(req, "anonymous");
+  if (limited) return limited;
+
   try {
     const validation = await validateBody(req, registerSchema);
     if (isErr(validation)) return validation;
@@ -62,8 +66,10 @@ async function register(
 
     // Create tenant
     const plan = body.plan ?? "basic";
-    const tenant: Tenant = {
-      id: generateId(),
+    const tenantId = generateId();
+    const tenant: Tenant & { tenantId: string } = {
+      id: tenantId,
+      tenantId,
       companyName: body.companyName,
       email: body.email,
       passwordHash,
@@ -99,8 +105,10 @@ async function register(
         token,
         tenant: {
           id: tenant.id,
-          companyName: tenant.companyName,
+          tenantId: tenant.id,
           email: tenant.email,
+          role: "admin",
+          companyName: tenant.companyName,
           plan: tenant.plan,
         },
       },
@@ -118,6 +126,9 @@ async function login(
   req: HttpRequest,
   context: InvocationContext
 ): Promise<HttpResponseInit> {
+  const limited = await rateLimit(req, "anonymous");
+  if (limited) return limited;
+
   try {
     const validation = await validateBody(req, loginSchema);
     if (isErr(validation)) return validation;
@@ -148,8 +159,10 @@ async function login(
       token,
       tenant: {
         id: tenant.id,
-        companyName: tenant.companyName,
+        tenantId: tenant.id,
         email: tenant.email,
+        role: "admin",
+        companyName: tenant.companyName,
         plan: tenant.plan,
       },
     });
@@ -169,20 +182,27 @@ async function me(
   if (isErr(authResult)) return authResult;
   const user = authResult;
 
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
+
   try {
     const tenant = await tenantRepository.getById(user.tenantId, user.tenantId);
     if (!tenant) return errorResponse("Tenant não encontrado", 404);
 
     return successResponse({
-      id: tenant.id,
-      companyName: tenant.companyName,
-      email: tenant.email,
-      plan: tenant.plan,
-      status: tenant.status,
-      settings: tenant.settings,
-      storeCount: tenant.storeCount,
-      productCount: tenant.productCount,
-      createdAt: tenant.createdAt,
+      user: {
+        id: tenant.id,
+        tenantId: tenant.id,
+        email: tenant.email,
+        role: "admin" as const,
+        companyName: tenant.companyName,
+        plan: tenant.plan,
+        status: tenant.status,
+        settings: tenant.settings,
+        storeCount: tenant.storeCount,
+        productCount: tenant.productCount,
+        createdAt: tenant.createdAt,
+      },
     });
   } catch (err: any) {
     context.error("Me error:", err);
@@ -211,4 +231,46 @@ app.http("auth-me", {
   authLevel: "anonymous",
   route: "auth/me",
   handler: me,
+});
+
+// ─── Update Profile ───
+
+async function updateProfile(
+  req: HttpRequest,
+  context: InvocationContext
+): Promise<HttpResponseInit> {
+  const authResult = requireAuth(req);
+  if (isErr(authResult)) return authResult;
+  const user = authResult;
+
+  try {
+    const body = (await req.json().catch(() => ({}))) as {
+      companyName?: string;
+      email?: string;
+    };
+
+    const updates: Record<string, any> = { updatedAt: now() };
+    if (body.companyName) updates.companyName = body.companyName;
+
+    const updated = await tenantRepository.update(
+      user.tenantId,
+      user.tenantId,
+      updates
+    );
+
+    if (!updated) return errorResponse("Tenant não encontrado", 404);
+
+    const { passwordHash, ...safe } = updated as any;
+    return successResponse(safe);
+  } catch (err: any) {
+    context.error("updateProfile error:", err);
+    return errorResponse("Erro interno", 500);
+  }
+}
+
+app.http("auth-profile", {
+  methods: ["PUT"],
+  authLevel: "anonymous",
+  route: "auth/profile",
+  handler: updateProfile,
 });

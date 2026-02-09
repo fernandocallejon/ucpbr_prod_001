@@ -26,6 +26,7 @@ import { initializeDatabase } from "../lib/cosmos.js";
 import { redisHealthCheck } from "../lib/redis.js";
 import { now } from "@retailnexus/shared";
 import { z } from "zod";
+import { rateLimit } from "../middleware/rate-limit.js";
 
 // ─── Schemas ───
 
@@ -42,6 +43,9 @@ async function listTenants(
   const authResult = requireAdmin(req);
   if (isErr(authResult)) return authResult;
   const user = authResult;
+
+  const limited = await rateLimit(req, "api");
+  if (limited) return limited;
 
   try {
     const tenants = await tenantRepository.listAll();
@@ -67,6 +71,9 @@ async function getTenantAdmin(
   if (isErr(authResult)) return authResult;
   const user = authResult;
 
+  const limited = await rateLimit(req, "api");
+  if (limited) return limited;
+
   const tenantId = req.params.tenantId;
   if (!tenantId) return errorResponse("tenantId obrigatório", 400);
 
@@ -91,6 +98,9 @@ async function updateTenantStatus(
   const authResult = requireAdmin(req);
   if (isErr(authResult)) return authResult;
   const user = authResult;
+
+  const limited = await rateLimit(req, "api");
+  if (limited) return limited;
 
   const tenantId = req.params.tenantId;
   if (!tenantId) return errorResponse("tenantId obrigatório", 400);
@@ -124,6 +134,9 @@ async function getStats(
   if (isErr(authResult)) return authResult;
   const user = authResult;
 
+  const limited = await rateLimit(req, "api");
+  if (limited) return limited;
+
   try {
     const planCounts = await tenantRepository.countByPlan();
     const basic = planCounts["basic"] || 0;
@@ -154,6 +167,9 @@ async function initDb(
   const authResult = requireAdmin(req);
   if (isErr(authResult)) return authResult;
   const user = authResult;
+
+  const limited = await rateLimit(req, "api");
+  if (limited) return limited;
 
   try {
     await initializeDatabase();
@@ -233,9 +249,4 @@ app.http("admin-db-init", {
   handler: initDb,
 });
 
-app.http("health", {
-  methods: ["GET"],
-  authLevel: "anonymous",
-  route: "health",
-  handler: health,
-});
+// Health check moved to health.functions.ts (health-liveness)

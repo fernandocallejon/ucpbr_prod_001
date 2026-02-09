@@ -31,12 +31,11 @@ import { sendToQueue } from "../lib/service-bus.js";
 import { generateId, now, PLAN_LIMITS, SERVICE_BUS_QUEUES } from "@retailnexus/shared";
 import type { Store, ConnectStoreInput } from "@retailnexus/shared";
 import { z } from "zod";
+import { rateLimit } from "../middleware/rate-limit.js";
 
 // ─── Schemas ───
 
 const connectStoreSchema = z.object({
-  name: z.string().min(2).max(100),
-  url: z.string().url(),
   platform: z.enum([
     "shopify",
     "woocommerce",
@@ -45,25 +44,29 @@ const connectStoreSchema = z.object({
     "nuvemshop",
     "tray",
     "loja_integrada",
+    "opencart",
     "other",
   ]),
-  api2cartStoreKey: z.string().min(10),
-  shippingDefaults: z
-    .object({
-      defaultCost: z.number().min(0),
-      defaultMethod: z.string(),
-      freeShippingThreshold: z.number().optional(),
-      defaultTransitDays: z.number().int().min(1).optional(),
-    })
-    .optional(),
-  returnPolicy: z
-    .object({
-      days: z.number().int().min(0),
-      freeReturn: z.boolean(),
-      policyUrl: z.string().url().optional(),
-    })
-    .optional(),
+  storeName: z.string().min(2).max(100),
+  storeUrl: z.string().url(),
+  credentials: z.object({
+    apiKey: z.string().min(1),
+    apiPassword: z.string().optional(),
+  }),
 });
+
+// Map our platform IDs to API2Cart cart type identifiers
+const PLATFORM_TO_CART_TYPE: Record<string, string> = {
+  shopify: "Shopify",
+  woocommerce: "WooCommerce",
+  magento: "Magento",
+  vtex: "VTEX",
+  nuvemshop: "Nuvemshop",
+  tray: "Tray",
+  loja_integrada: "LojaIntegrada",
+  opencart: "OpenCart",
+  other: "custom",
+};
 
 // ─── List Stores ───
 
@@ -75,9 +78,23 @@ async function listStores(
   if (isErr(authResult)) return authResult;
   const user = authResult;
 
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
+
   try {
     const stores = await storeRepository.listByTenant(user.tenantId);
-    return successResponse(stores);
+    // Transform to match frontend StoreItem interface
+    const mapped = (stores || []).map((s: any) => ({
+      id: s.id,
+      platform: s.platform,
+      storeUrl: s.url,
+      storeName: s.name,
+      status: s.syncStatus === "syncing" ? "syncing" : s.syncStatus === "error" ? "error" : s.syncStatus === "pending" ? "inactive" : "active",
+      productCount: s.productCount || 0,
+      lastSync: s.lastSyncAt || null,
+      createdAt: s.createdAt,
+    }));
+    return successResponse(mapped);
   } catch (err: any) {
     context.error("listStores error:", err);
     return errorResponse("Erro interno", 500);
@@ -93,6 +110,9 @@ async function connectStore(
   const authResult = requireAuth(req);
   if (isErr(authResult)) return authResult;
   const user = authResult;
+
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
 
   try {
     const validation = await validateBody(req, connectStoreSchema);
@@ -112,14 +132,23 @@ async function connectStore(
       );
     }
 
-    // Verify API2Cart connection
+    // Create API2Cart connection
     const api2cart = getApi2CartService();
-    // Try to list products as a connectivity test
+    const cartType = PLATFORM_TO_CART_TYPE[body.platform] || body.platform;
+    let storeKey: string;
     try {
-      await api2cart.listProducts(body.api2cartStoreKey, { count: 1 });
-    } catch {
+      const connection = await api2cart.createConnection({
+        cartType,
+        storeUrl: body.storeUrl,
+        apiKey: body.credentials.apiKey,
+        apiSecret: body.credentials.apiPassword,
+        accessToken: body.credentials.apiKey, // Some platforms use access_token
+      });
+      storeKey = connection.store_key;
+    } catch (err: any) {
+      context.warn("API2Cart createConnection failed:", err.message);
       return errorResponse(
-        "Não foi possível conectar à loja. Verifique a chave API2Cart.",
+        "Não foi possível conectar à loja. Verifique as credenciais e URL.",
         400
       );
     }
@@ -127,15 +156,13 @@ async function connectStore(
     const store: Store = {
       id: generateId(),
       tenantId: user.tenantId,
-      name: body.name,
-      url: body.url,
+      name: body.storeName,
+      url: body.storeUrl,
       platform: body.platform,
-      api2cartStoreKey: body.api2cartStoreKey,
+      api2cartStoreKey: storeKey,
       syncStatus: "pending",
       lastSyncAt: null,
       productCount: 0,
-      shippingDefaults: body.shippingDefaults,
-      returnPolicy: body.returnPolicy,
       createdAt: now(),
       updatedAt: now(),
     };
@@ -172,6 +199,9 @@ async function getStore(
   if (isErr(authResult)) return authResult;
   const user = authResult;
 
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
+
   const storeId = req.params.storeId;
   if (!storeId) return errorResponse("storeId obrigatório", 400);
 
@@ -195,6 +225,9 @@ async function deleteStore(
   const authResult = requireAuth(req);
   if (isErr(authResult)) return authResult;
   const user = authResult;
+
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
 
   const storeId = req.params.storeId;
   if (!storeId) return errorResponse("storeId obrigatório", 400);
@@ -237,6 +270,9 @@ async function triggerSync(
   if (isErr(authResult)) return authResult;
   const user = authResult;
 
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
+
   const storeId = req.params.storeId;
   if (!storeId) return errorResponse("storeId obrigatório", 400);
 
@@ -274,6 +310,9 @@ async function getStoreStatus(
   if (isErr(authResult)) return authResult;
   const user = authResult;
 
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
+
   const storeId = req.params.storeId;
   if (!storeId) return errorResponse("storeId obrigatório", 400);
 
@@ -307,6 +346,13 @@ app.http("stores-connect", {
   methods: ["POST"],
   authLevel: "anonymous",
   route: "stores/connect",
+  handler: connectStore,
+});
+
+app.http("stores-create", {
+  methods: ["POST"],
+  authLevel: "anonymous",
+  route: "stores",
   handler: connectStore,
 });
 

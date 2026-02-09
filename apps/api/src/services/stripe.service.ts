@@ -27,17 +27,18 @@ export class StripeService {
   private webhookSecret: string;
   private baseUrl = "https://api.stripe.com/v1";
 
-  // Price IDs (configure in Stripe Dashboard)
-  private priceIds: Record<string, string> = {
-    basic: "price_basic_monthly",
-    pro: "price_pro_monthly",
-    enterprise: "price_enterprise_monthly",
-  };
+  // Price IDs — read from env or Stripe Dashboard
+  private priceIds: Record<string, string>;
 
   constructor() {
     const config = getConfig();
     this.apiKey = config.stripe.secretKey;
     this.webhookSecret = config.stripe.webhookSecret;
+    this.priceIds = {
+      basic: config.stripe.priceIdBasic || "",
+      pro: config.stripe.priceIdPro || "",
+      enterprise: config.stripe.priceIdEnterprise || "",
+    };
   }
 
   /**
@@ -137,6 +138,29 @@ export class StripeService {
     );
 
     return { url: result.url };
+  }
+
+  /**
+   * List invoices for a customer.
+   */
+  async listInvoices(customerId: string): Promise<any[]> {
+    try {
+      const result = await this.request(
+        "GET",
+        `/invoices?customer=${encodeURIComponent(customerId)}&limit=20`
+      );
+
+      return (result.data || []).map((inv: any) => ({
+        id: inv.id,
+        number: inv.number || inv.id,
+        amount: (inv.amount_paid || inv.total || 0) / 100,
+        status: inv.status === "paid" ? "paid" : inv.status === "void" ? "void" : "open",
+        date: new Date((inv.created || 0) * 1000).toISOString(),
+        pdfUrl: inv.invoice_pdf || undefined,
+      }));
+    } catch {
+      return [];
+    }
   }
 
   /**

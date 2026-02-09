@@ -39,6 +39,7 @@ import {
 } from "@retailnexus/shared";
 import type { ScanJob, CompetitorPrice } from "@retailnexus/shared";
 import { z } from "zod";
+import { rateLimit } from "../middleware/rate-limit.js";
 
 // ─── Schemas ───
 
@@ -60,6 +61,9 @@ async function startScan(
   const authResult = requireAuth(req);
   if (isErr(authResult)) return authResult;
   const user = authResult;
+
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
 
   try {
     const validation = await validateBody(req, startScanSchema);
@@ -138,6 +142,9 @@ async function listJobs(
   if (isErr(authResult)) return authResult;
   const user = authResult;
 
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
+
   try {
     const results = await scanJobRepository.query(
       { query: "SELECT * FROM c WHERE c.tenantId = @tid ORDER BY c.createdAt DESC OFFSET 0 LIMIT 50", parameters: [{ name: "@tid", value: user.tenantId }] }
@@ -159,6 +166,9 @@ async function getJob(
   const authResult = requireAuth(req);
   if (isErr(authResult)) return authResult;
   const user = authResult;
+
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
 
   const jobId = req.params.jobId;
   if (!jobId) return errorResponse("jobId obrigatório", 400);
@@ -183,6 +193,9 @@ async function getCompetitors(
   const authResult = requireAuth(req);
   if (isErr(authResult)) return authResult;
   const user = authResult;
+
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
 
   const productId = req.params.productId;
   if (!productId) return errorResponse("productId obrigatório", 400);
@@ -227,6 +240,9 @@ async function manualScan(
   const authResult = requireAuth(req);
   if (isErr(authResult)) return authResult;
   const user = authResult;
+
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
 
   try {
     const validation = await validateBody(req, manualScanSchema);
@@ -325,4 +341,181 @@ app.http("scanning-manual", {
   authLevel: "anonymous",
   route: "scanning/manual",
   handler: manualScan,
+});
+
+// ─── Competitive Intelligence Alias Routes (frontend compat) ───
+
+// GET /api/competitive/stats
+async function competitiveStats(
+  req: HttpRequest,
+  context: InvocationContext
+): Promise<HttpResponseInit> {
+  const authResult = requireAuth(req);
+  if (isErr(authResult)) return authResult;
+  const user = authResult;
+
+  try {
+    // Get all products with GTIN for this tenant
+    const products = await productRepository.listActiveWithGTIN(user.tenantId);
+    
+    let totalTracked = 0;
+    let cheaperCount = 0;
+    let matchCount = 0;
+    let moreExpensiveCount = 0;
+    let totalParity = 0;
+
+    for (const product of products) {
+      if (!product.gtin) continue;
+      
+      const competitors = await competitorPriceRepository.query({
+        query: "SELECT TOP 1 * FROM c WHERE c.ean = @ean AND c.isActive = true ORDER BY c.price ASC",
+        parameters: [{ name: "@ean", value: product.gtin }],
+      });
+
+      if (competitors.length > 0) {
+        totalTracked++;
+        const bestCompetitor = competitors[0] as any;
+        const diff = product.price - bestCompetitor.price;
+        
+        if (Math.abs(diff) <= 1) matchCount++;
+        else if (diff < 0) cheaperCount++;
+        else moreExpensiveCount++;
+
+        if (bestCompetitor.price > 0) {
+          totalParity += (product.price / bestCompetitor.price) * 100;
+        }
+      }
+    }
+
+    return successResponse({
+      totalTracked,
+      cheaperCount,
+      matchCount,
+      moreExpensiveCount,
+      avgPriceParity: totalTracked > 0 ? Math.round(totalParity / totalTracked) : 0,
+    });
+  } catch (err: any) {
+    context.error("competitiveStats error:", err);
+    return successResponse({
+      totalTracked: 0, cheaperCount: 0, matchCount: 0, moreExpensiveCount: 0, avgPriceParity: 0,
+    });
+  }
+}
+
+app.http("competitive-stats", {
+  methods: ["GET"],
+  authLevel: "anonymous",
+  route: "competitive/stats",
+  handler: competitiveStats,
+});
+
+// GET /api/competitive/prices
+async function competitivePrices(
+  req: HttpRequest,
+  context: InvocationContext
+): Promise<HttpResponseInit> {
+  const authResult = requireAuth(req);
+  if (isErr(authResult)) return authResult;
+  const user = authResult;
+
+  try {
+    const products = await productRepository.listActiveWithGTIN(user.tenantId);
+    const results: any[] = [];
+
+    for (const product of products.slice(0, 50)) {
+      if (!product.gtin) continue;
+
+      const competitors = await competitorPriceRepository.query({
+        query: "SELECT TOP 5 * FROM c WHERE c.ean = @ean AND c.isActive = true ORDER BY c.price ASC",
+        parameters: [{ name: "@ean", value: product.gtin }],
+      });
+
+      for (const comp of competitors) {
+        const c = comp as any;
+        results.push({
+          id: c.id,
+          gtin: product.gtin,
+          productTitle: product.name,
+          myPrice: product.price,
+          competitorName: c.competitorName || c.source || "Unknown",
+          competitorPrice: c.price,
+          priceDiff: product.price - c.price,
+          lastSeen: c.lastSeenAt || c.updatedAt || c.createdAt,
+          source: c.source || "google_shopping",
+        });
+      }
+    }
+
+    return successResponse(results);
+  } catch (err: any) {
+    context.error("competitivePrices error:", err);
+    return successResponse([]);
+  }
+}
+
+app.http("competitive-prices", {
+  methods: ["GET"],
+  authLevel: "anonymous",
+  route: "competitive/prices",
+  handler: competitivePrices,
+});
+
+// POST /api/competitive/scan — alias for scanning/manual or scanning/start
+async function competitiveScan(
+  req: HttpRequest,
+  context: InvocationContext
+): Promise<HttpResponseInit> {
+  const authResult = requireAuth(req);
+  if (isErr(authResult)) return authResult;
+  const user = authResult;
+
+  try {
+    // Get first store and scan all products
+    const stores = await storeRepository.listByTenant(user.tenantId);
+    if (!stores || stores.length === 0) {
+      return successResponse({ message: "Nenhuma loja conectada", scanned: 0 });
+    }
+
+    const products = await productRepository.listActiveWithGTIN(user.tenantId);
+    if (products.length === 0) {
+      return successResponse({ message: "Nenhum produto com GTIN", scanned: 0 });
+    }
+
+    // Create scan job
+    const job: ScanJob = {
+      id: generateId(),
+      tenantId: user.tenantId,
+      storeId: stores[0].id,
+      status: "queued",
+      totalProducts: products.length,
+      scannedProducts: 0,
+      errors: 0,
+      createdAt: now(),
+      updatedAt: now(),
+    };
+
+    await scanJobRepository.create(job);
+
+    // Queue scan requests
+    for (const product of products) {
+      await sendToQueue(SERVICE_BUS_QUEUES.SCAN_REQUESTS, {
+        jobId: job.id,
+        tenantId: user.tenantId,
+        storeId: stores[0].id,
+        productId: product.id,
+      });
+    }
+
+    return successResponse({ message: "Varredura iniciada", scanned: products.length, jobId: job.id });
+  } catch (err: any) {
+    context.error("competitiveScan error:", err);
+    return errorResponse("Erro ao iniciar scan", 500);
+  }
+}
+
+app.http("competitive-scan", {
+  methods: ["POST"],
+  authLevel: "anonymous",
+  route: "competitive/scan",
+  handler: competitiveScan,
 });

@@ -30,3 +30,6 @@ coverage/
 # Logs
 *.log
 npm-debug.log*
+.deploy/
+apps/api/deploy/
+apps/web/dist/

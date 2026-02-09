@@ -13,7 +13,7 @@ class TenantRepository extends BaseRepository<Tenant> {
 
   async getByEmail(email: string): Promise<Tenant | null> {
     const results = await this.query({
-      query: "SELECT * FROM c WHERE c.email = @email AND c.type = 'tenant'",
+      query: "SELECT * FROM c WHERE c.email = @email",
       parameters: [{ name: "@email", value: email }],
     });
     return results[0] || null;
@@ -21,7 +21,7 @@ class TenantRepository extends BaseRepository<Tenant> {
 
   async listAll(page = 1, pageSize = 50): Promise<Tenant[]> {
     const results = await this.query({
-      query: `SELECT * FROM c WHERE c.type = 'tenant' ORDER BY c.createdAt DESC OFFSET @offset LIMIT @limit`,
+      query: `SELECT * FROM c ORDER BY c.createdAt DESC OFFSET @offset LIMIT @limit`,
       parameters: [
         { name: "@offset", value: (page - 1) * pageSize },
         { name: "@limit", value: pageSize },
@@ -33,7 +33,7 @@ class TenantRepository extends BaseRepository<Tenant> {
   async countByPlan(): Promise<Record<string, number>> {
     const results = await this.query({
       query:
-        "SELECT c.plan, COUNT(1) as count FROM c WHERE c.type = 'tenant' GROUP BY c.plan",
+        "SELECT c.plan, COUNT(1) as count FROM c GROUP BY c.plan",
       parameters: [],
     });
     const counts: Record<string, number> = {};

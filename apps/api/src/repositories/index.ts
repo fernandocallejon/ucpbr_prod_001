@@ -8,4 +8,5 @@ export {
   competitorPriceRepository,
   scanJobRepository,
   sellerProfileRepository,
+  pricingRuleRepository,
 } from "./ucp.repository.js";

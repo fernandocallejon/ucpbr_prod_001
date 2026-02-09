@@ -18,6 +18,7 @@ import {
   tenantRepository,
   competitorPriceRepository,
   priceHistoryRepository,
+  pricingRuleRepository,
 } from "../repositories/index.js";
 import {
   requireAuth,
@@ -31,6 +32,7 @@ import { sendToQueue } from "../lib/service-bus.js";
 import { SERVICE_BUS_QUEUES, now } from "@retailnexus/shared";
 import type { CompetitorPrice } from "@retailnexus/shared";
 import { z } from "zod";
+import { rateLimit } from "../middleware/rate-limit.js";
 
 // ─── Schemas ───
 
@@ -53,6 +55,9 @@ async function calculatePrice(
   const authResult = requireAuth(req);
   if (isErr(authResult)) return authResult;
   const user = authResult;
+
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
 
   const productId = req.params.productId;
   if (!productId) return errorResponse("productId obrigatório", 400);
@@ -100,6 +105,9 @@ async function recalculateAll(
   const authResult = requireAuth(req);
   if (isErr(authResult)) return authResult;
   const user = authResult;
+
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
 
   try {
     const body = (await req.json().catch(() => ({}))) as {
@@ -154,6 +162,9 @@ async function getPriceHistory(
   if (isErr(authResult)) return authResult;
   const user = authResult;
 
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
+
   const productId = req.params.productId;
   if (!productId) return errorResponse("productId obrigatório", 400);
 
@@ -188,6 +199,9 @@ async function bulkSetRules(
   const authResult = requireAuth(req);
   if (isErr(authResult)) return authResult;
   const user = authResult;
+
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
 
   try {
     const validation = await validateBody(req, bulkRulesSchema);
@@ -263,4 +277,145 @@ app.http("pricing-bulk-rules", {
   authLevel: "anonymous",
   route: "pricing/bulk-rules",
   handler: bulkSetRules,
+});
+
+// ─── Pricing Rules CRUD (frontend compat) ───
+
+import { generateId as genId } from "@retailnexus/shared";
+
+// GET /api/pricing/rules → list all pricing rules for tenant
+async function listPricingRules(
+  req: HttpRequest,
+  context: InvocationContext
+): Promise<HttpResponseInit> {
+  const authResult = requireAuth(req);
+  if (isErr(authResult)) return authResult;
+  const user = authResult;
+
+  try {
+    const rules = await pricingRuleRepository.listByTenant(user.tenantId);
+    return successResponse(rules);
+  } catch (err: any) {
+    context.error("listPricingRules error:", err);
+    return successResponse([]);
+  }
+}
+
+app.http("pricing-rules-list", {
+  methods: ["GET"],
+  authLevel: "anonymous",
+  route: "pricing/rules",
+  handler: listPricingRules,
+});
+
+// POST /api/pricing/rules → create a new pricing rule
+async function createPricingRule(
+  req: HttpRequest,
+  context: InvocationContext
+): Promise<HttpResponseInit> {
+  const authResult = requireAuth(req);
+  if (isErr(authResult)) return authResult;
+  const user = authResult;
+
+  try {
+    const body = (await req.json().catch(() => ({}))) as any;
+    
+    const rule = {
+      id: genId(),
+      tenantId: user.tenantId,
+      name: body.name || "Nova Regra",
+      strategy: body.strategy || "manual",
+      margin: body.margin,
+      minMargin: body.minMargin,
+      maxDiscount: body.maxDiscount,
+      targetPosition: body.targetPosition,
+      isActive: body.isActive !== false,
+      appliedProducts: 0,
+      createdAt: now(),
+      updatedAt: now(),
+    };
+
+    await pricingRuleRepository.create(rule);
+    return successResponse(rule, 201);
+  } catch (err: any) {
+    context.error("createPricingRule error:", err);
+    return errorResponse("Erro ao criar regra", 500);
+  }
+}
+
+app.http("pricing-rules-create", {
+  methods: ["POST"],
+  authLevel: "anonymous",
+  route: "pricing/rules",
+  handler: createPricingRule,
+});
+
+// PUT /api/pricing/rules/{ruleId} → update a pricing rule
+async function updatePricingRule(
+  req: HttpRequest,
+  context: InvocationContext
+): Promise<HttpResponseInit> {
+  const authResult = requireAuth(req);
+  if (isErr(authResult)) return authResult;
+  const user = authResult;
+
+  const ruleId = req.params.ruleId;
+  if (!ruleId) return errorResponse("ruleId obrigatório", 400);
+
+  try {
+    const body = (await req.json().catch(() => ({}))) as any;
+    const updates: Record<string, any> = { updatedAt: now() };
+    
+    if (body.name !== undefined) updates.name = body.name;
+    if (body.strategy !== undefined) updates.strategy = body.strategy;
+    if (body.margin !== undefined) updates.margin = body.margin;
+    if (body.minMargin !== undefined) updates.minMargin = body.minMargin;
+    if (body.maxDiscount !== undefined) updates.maxDiscount = body.maxDiscount;
+    if (body.targetPosition !== undefined) updates.targetPosition = body.targetPosition;
+    if (body.isActive !== undefined) updates.isActive = body.isActive;
+
+    const updated = await pricingRuleRepository.update(ruleId, user.tenantId, updates);
+    if (!updated) return errorResponse("Regra não encontrada", 404);
+
+    return successResponse(updated);
+  } catch (err: any) {
+    context.error("updatePricingRule error:", err);
+    return errorResponse("Erro ao atualizar regra", 500);
+  }
+}
+
+app.http("pricing-rules-update", {
+  methods: ["PUT"],
+  authLevel: "anonymous",
+  route: "pricing/rules/{ruleId}",
+  handler: updatePricingRule,
+});
+
+// DELETE /api/pricing/rules/{ruleId} → delete a pricing rule
+async function deletePricingRule(
+  req: HttpRequest,
+  context: InvocationContext
+): Promise<HttpResponseInit> {
+  const authResult = requireAuth(req);
+  if (isErr(authResult)) return authResult;
+  const user = authResult;
+
+  const ruleId = req.params.ruleId;
+  if (!ruleId) return errorResponse("ruleId obrigatório", 400);
+
+  try {
+    const deleted = await pricingRuleRepository.delete(ruleId, user.tenantId);
+    if (!deleted) return errorResponse("Regra não encontrada", 404);
+    return successResponse({ message: "Regra removida" });
+  } catch (err: any) {
+    context.error("deletePricingRule error:", err);
+    return errorResponse("Erro ao remover regra", 500);
+  }
+}
+
+app.http("pricing-rules-delete", {
+  methods: ["DELETE"],
+  authLevel: "anonymous",
+  route: "pricing/rules/{ruleId}",
+  handler: deletePricingRule,
 });

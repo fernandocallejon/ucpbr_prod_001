@@ -38,12 +38,15 @@ export interface AppConfig {
   stripe: {
     secretKey: string;
     webhookSecret: string;
+    priceIdBasic: string;
+    priceIdPro: string;
+    priceIdEnterprise: string;
   };
 }
 
 function env(key: string, fallback?: string): string {
-  const value = process.env[key] || fallback;
-  if (!value) {
+  const value = process.env[key] ?? fallback;
+  if (value === undefined) {
     throw new Error(`Missing required environment variable: ${key}`);
   }
   return value;
@@ -90,6 +93,9 @@ export function getConfig(): AppConfig {
     stripe: {
       secretKey: env("STRIPE_SECRET_KEY", ""),
       webhookSecret: env("STRIPE_WEBHOOK_SECRET", ""),
+      priceIdBasic: env("STRIPE_PRICE_BASIC", ""),
+      priceIdPro: env("STRIPE_PRICE_PRO", ""),
+      priceIdEnterprise: env("STRIPE_PRICE_ENTERPRISE", ""),
     },
   };
 

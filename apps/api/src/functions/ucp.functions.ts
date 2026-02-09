@@ -32,6 +32,7 @@ import {
   generateProductJsonLD,
   generateEmbedScript,
 } from "@retailnexus/shared";
+import { rateLimit } from "../middleware/rate-limit.js";
 
 // ─── Get UCP Signal ───
 
@@ -41,6 +42,9 @@ async function getSignal(
 ): Promise<HttpResponseInit> {
   const authResult = requireAuth(req);
   if (isErr(authResult)) return authResult;
+
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
 
   const ean = req.params.ean;
   if (!ean) return errorResponse("EAN obrigatório", 400);
@@ -66,6 +70,9 @@ async function getOffers(
 ): Promise<HttpResponseInit> {
   const authResult = requireAuth(req);
   if (isErr(authResult)) return authResult;
+
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
 
   const ean = req.params.ean;
   if (!ean) return errorResponse("EAN obrigatório", 400);
@@ -96,6 +103,9 @@ async function getDashboard(
   if (isErr(authResult)) return authResult;
   const user = authResult;
 
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
+
   try {
     const ucpService = getUCPSignalService();
     const metrics = await ucpService.getDashboardMetrics(user.tenantId);
@@ -116,6 +126,9 @@ async function getReadiness(
   const authResult = requireAuth(req);
   if (isErr(authResult)) return authResult;
   const user = authResult;
+
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
 
   const productId = req.params.productId;
   if (!productId) return errorResponse("productId obrigatório", 400);
@@ -196,6 +209,9 @@ async function parityCheck(
   if (isErr(authResult)) return authResult;
   const user = authResult;
 
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
+
   try {
     const body = (await req.json().catch(() => ({}))) as {
       storeId?: string;
@@ -257,6 +273,9 @@ async function getSellerProfile(
   if (isErr(authResult)) return authResult;
   const user = authResult;
 
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
+
   try {
     const storeId = req.query.get("storeId");
     if (!storeId) return errorResponse("storeId obrigatório", 400);
@@ -286,6 +305,9 @@ async function getJsonLD(
   const authResult = requireAuth(req);
   if (isErr(authResult)) return authResult;
   const user = authResult;
+
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
 
   const productId = req.params.productId;
   if (!productId) return errorResponse("productId obrigatório", 400);
@@ -366,4 +388,73 @@ app.http("ucp-jsonld", {
   authLevel: "anonymous",
   route: "ucp/jsonld/{productId}",
   handler: getJsonLD,
+});
+
+// ─── Dashboard Stats (frontend compat) ───
+
+async function getDashboardStats(
+  req: HttpRequest,
+  context: InvocationContext
+): Promise<HttpResponseInit> {
+  const authResult = requireAuth(req);
+  if (isErr(authResult)) return authResult;
+  const user = authResult;
+
+  try {
+    const tenant = await tenantRepository.getById(user.tenantId, user.tenantId);
+    if (!tenant) return errorResponse("Tenant não encontrado", 404);
+
+    const products = await productRepository.listActiveWithGTIN(user.tenantId);
+    const allProducts = await productRepository.query({
+      query: "SELECT * FROM c WHERE c.tenantId = @tid",
+      parameters: [{ name: "@tid", value: user.tenantId }],
+    });
+    const stores = await storeRepository.listByTenant(user.tenantId);
+
+    // Calculate UCP scores
+    let totalScore = 0;
+    let eligible = 0;
+    let almost = 0;
+    let notEligible = 0;
+
+    for (const product of allProducts) {
+      const score = (product as any).ucpReadinessScore || 0;
+      totalScore += score;
+      if (score >= 80) eligible++;
+      else if (score >= 50) almost++;
+      else notEligible++;
+    }
+
+    const avgScore = allProducts.length > 0 ? Math.round(totalScore / allProducts.length) : 0;
+
+    return successResponse({
+      totalProducts: allProducts.length,
+      totalStores: stores.length,
+      avgUcpScore: avgScore,
+      productsEligible: eligible,
+      productsAlmost: almost,
+      productsNotEligible: notEligible,
+      recentPriceChanges: 0,
+      avgPriceParity: 0,
+    });
+  } catch (err: any) {
+    context.error("getDashboardStats error:", err);
+    return successResponse({
+      totalProducts: 0,
+      totalStores: 0,
+      avgUcpScore: 0,
+      productsEligible: 0,
+      productsAlmost: 0,
+      productsNotEligible: 0,
+      recentPriceChanges: 0,
+      avgPriceParity: 0,
+    });
+  }
+}
+
+app.http("dashboard-stats", {
+  methods: ["GET"],
+  authLevel: "anonymous",
+  route: "dashboard/stats",
+  handler: getDashboardStats,
 });

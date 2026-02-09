@@ -3,6 +3,17 @@
 // Registers all function triggers
 // ============================================================
 
+// Application Insights (optional — only initialize if package is available)
+try {
+  const appInsights = require("applicationinsights");
+  if (process.env.APPLICATIONINSIGHTS_CONNECTION_STRING) {
+    appInsights.setup().setSendLiveMetrics(true).start();
+    console.log("📊 Application Insights initialized");
+  }
+} catch {
+  // applicationinsights not installed — skip
+}
+
 // HTTP Functions
 import "./functions/health.functions.js";
 import "./functions/auth.functions.js";

@@ -33,6 +33,7 @@ import { calculateUCPReadinessScore } from "@retailnexus/shared";
 import type { Product, UpdatePricingRuleInput } from "@retailnexus/shared";
 import { z } from "zod";
 import { parse } from "csv-parse/sync";
+import { rateLimit } from "../middleware/rate-limit.js";
 
 // ─── Schemas ───
 
@@ -56,10 +57,15 @@ async function listProducts(
   if (isErr(authResult)) return authResult;
   const user = authResult;
 
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
+
   try {
     const page = parseInt(req.query.get("page") || "1");
-    const limit = parseInt(req.query.get("limit") || "50");
+    const limit = parseInt(req.query.get("pageSize") || req.query.get("limit") || "50");
     const storeId = req.query.get("storeId");
+    const search = req.query.get("search") || "";
+    const readiness = req.query.get("readiness") || "";
 
     let result;
     if (storeId) {
@@ -98,6 +104,9 @@ async function getProduct(
   if (isErr(authResult)) return authResult;
   const user = authResult;
 
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
+
   const productId = req.params.productId;
   if (!productId) return errorResponse("productId obrigatório", 400);
 
@@ -121,6 +130,9 @@ async function updatePricingRule(
   const authResult = requireAuth(req);
   if (isErr(authResult)) return authResult;
   const user = authResult;
+
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
 
   const productId = req.params.productId;
   if (!productId) return errorResponse("productId obrigatório", 400);
@@ -154,6 +166,9 @@ async function importGTINs(
   const authResult = requireAuth(req);
   if (isErr(authResult)) return authResult;
   const user = authResult;
+
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
 
   try {
     const body = await req.text();
@@ -192,6 +207,9 @@ async function importCosts(
   const authResult = requireAuth(req);
   if (isErr(authResult)) return authResult;
   const user = authResult;
+
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
 
   try {
     const body = await req.text();
@@ -233,6 +251,9 @@ async function getGTINCoverage(
   const authResult = requireAuth(req);
   if (isErr(authResult)) return authResult;
   const user = authResult;
+
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
 
   try {
     const coverage = await productRepository.getGTINCoverage(user.tenantId);

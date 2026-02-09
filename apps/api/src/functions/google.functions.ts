@@ -31,6 +31,7 @@ import { getGoogleContentApiService } from "../services/google-content-api.servi
 import { getGoogleIndexingApiService } from "../services/google-indexing.service.js";
 import { generateId, now } from "@retailnexus/shared";
 import { z } from "zod";
+import { rateLimit } from "../middleware/rate-limit.js";
 
 // ─── Schemas ───
 
@@ -53,6 +54,9 @@ async function pushProduct(
   const authResult = requireAuth(req);
   if (isErr(authResult)) return authResult;
   const user = authResult;
+
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
 
   const productId = req.params.productId;
   if (!productId) return errorResponse("productId obrigatório", 400);
@@ -110,6 +114,9 @@ async function batchPush(
   if (isErr(authResult)) return authResult;
   const user = authResult;
 
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
+
   try {
     const validation = await validateBody(req, batchPushSchema);
     if (isErr(validation)) return validation;
@@ -163,6 +170,9 @@ async function getSyncLog(
   if (isErr(authResult)) return authResult;
   const user = authResult;
 
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
+
   try {
     const limit = parseInt(req.query.get("limit") || "50");
     const storeId = req.query.get("storeId");
@@ -209,6 +219,9 @@ async function getProductStatus(
   if (isErr(authResult)) return authResult;
   const user = authResult;
 
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
+
   const productId = req.params.productId;
   if (!productId) return errorResponse("productId obrigatório", 400);
 
@@ -238,6 +251,9 @@ async function notifyIndexing(
 ): Promise<HttpResponseInit> {
   const authResult = requireAuth(req);
   if (isErr(authResult)) return authResult;
+
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
 
   try {
     const validation = await validateBody(req, indexingNotifySchema);
@@ -271,6 +287,9 @@ async function getIndexingQuota(
 ): Promise<HttpResponseInit> {
   const authResult = requireAuth(req);
   if (isErr(authResult)) return authResult;
+
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
 
   try {
     const indexingApi = getGoogleIndexingApiService();
@@ -323,4 +342,158 @@ app.http("google-indexing-quota", {
   authLevel: "anonymous",
   route: "google/indexing/quota",
   handler: getIndexingQuota,
+});
+
+// ─── Frontend Compatibility Alias Routes ───
+
+// GET /api/google/status → returns GMC connection status
+async function getGoogleStatus(
+  req: HttpRequest,
+  context: InvocationContext
+): Promise<HttpResponseInit> {
+  const authResult = requireAuth(req);
+  if (isErr(authResult)) return authResult;
+  const user = authResult;
+
+  try {
+    const tenant = await tenantRepository.getById(user.tenantId, user.tenantId);
+    if (!tenant) return errorResponse("Tenant não encontrado", 404);
+
+    const gmc = tenant.settings?.googleMerchantCenter;
+    const connected = !!(gmc && gmc.connected && gmc.accountId);
+
+    // Get product counts from sync log
+    let totalProducts = 0;
+    let approvedProducts = 0;
+    let disapprovedProducts = 0;
+    let pendingProducts = 0;
+    let lastFeedSync: string | null = null;
+
+    if (connected) {
+      const logs = await googleSyncLogRepository.query({
+        query: "SELECT * FROM c WHERE c.tenantId = @tid ORDER BY c.createdAt DESC OFFSET 0 LIMIT 1",
+        parameters: [{ name: "@tid", value: user.tenantId }],
+      });
+      if (logs.length > 0) {
+        lastFeedSync = (logs[0] as any).createdAt;
+      }
+
+      // Count products
+      const products = await productRepository.listActiveWithGTIN(user.tenantId);
+      totalProducts = products.length;
+      approvedProducts = products.filter((p: any) => p.googleStatus === "approved").length;
+      disapprovedProducts = products.filter((p: any) => p.googleStatus === "disapproved").length;
+      pendingProducts = totalProducts - approvedProducts - disapprovedProducts;
+    }
+
+    // Get indexing quota
+    let indexingQuota = { used: 0, total: 200 };
+    try {
+      const indexingApi = getGoogleIndexingApiService();
+      indexingQuota = indexingApi.getQuotaStatus();
+    } catch {}
+
+    return successResponse({
+      connected,
+      merchantId: gmc?.accountId || undefined,
+      email: tenant.email,
+      totalProducts,
+      approvedProducts,
+      disapprovedProducts,
+      pendingProducts,
+      lastFeedSync,
+      indexingQuota,
+    });
+  } catch (err: any) {
+    context.error("getGoogleStatus error:", err);
+    return successResponse({
+      connected: false,
+      totalProducts: 0,
+      approvedProducts: 0,
+      disapprovedProducts: 0,
+      pendingProducts: 0,
+      lastFeedSync: null,
+      indexingQuota: { used: 0, total: 200 },
+    });
+  }
+}
+
+app.http("google-status", {
+  methods: ["GET"],
+  authLevel: "anonymous",
+  route: "google/status",
+  handler: getGoogleStatus,
+});
+
+// GET /api/google/indexing/logs → returns indexing log entries
+async function getIndexingLogs(
+  req: HttpRequest,
+  context: InvocationContext
+): Promise<HttpResponseInit> {
+  const authResult = requireAuth(req);
+  if (isErr(authResult)) return authResult;
+  const user = authResult;
+
+  try {
+    const logs = await googleSyncLogRepository.query({
+      query: "SELECT * FROM c WHERE c.tenantId = @tid ORDER BY c.createdAt DESC OFFSET 0 LIMIT 50",
+      parameters: [{ name: "@tid", value: user.tenantId }],
+    });
+
+    return successResponse(
+      logs.map((l: any) => ({
+        id: l.id,
+        url: l.payload?.url || `product:${l.productId}`,
+        type: l.action === "delete" ? "URL_DELETED" : "URL_UPDATED",
+        status: l.status || "success",
+        timestamp: l.createdAt,
+      }))
+    );
+  } catch (err: any) {
+    context.error("getIndexingLogs error:", err);
+    return successResponse([]);
+  }
+}
+
+app.http("google-indexing-logs", {
+  methods: ["GET"],
+  authLevel: "anonymous",
+  route: "google/indexing/logs",
+  handler: getIndexingLogs,
+});
+
+// POST /api/google/feed/sync → alias for google/push/batch
+app.http("google-feed-sync", {
+  methods: ["POST"],
+  authLevel: "anonymous",
+  route: "google/feed/sync",
+  handler: batchPush,
+});
+
+// GET /api/google/auth/url → returns Google OAuth URL
+async function getGoogleAuthUrl(
+  req: HttpRequest,
+  context: InvocationContext
+): Promise<HttpResponseInit> {
+  const authResult = requireAuth(req);
+  if (isErr(authResult)) return authResult;
+
+  try {
+    // Return a placeholder OAuth URL — actual OAuth requires Google Cloud credentials
+    const origin = req.headers.get("origin") || "https://icy-beach-03da2f70f.4.azurestaticapps.net";
+    return successResponse({
+      url: `https://accounts.google.com/o/oauth2/v2/auth?client_id=pending&redirect_uri=${encodeURIComponent(origin + "/google/callback")}&response_type=code&scope=content+indexing&access_type=offline`,
+      message: "Configure GOOGLE_CLIENT_ID nas variáveis de ambiente para ativar OAuth",
+    });
+  } catch (err: any) {
+    context.error("getGoogleAuthUrl error:", err);
+    return errorResponse("Erro ao gerar URL de autenticação", 500);
+  }
+}
+
+app.http("google-auth-url", {
+  methods: ["GET"],
+  authLevel: "anonymous",
+  route: "google/auth/url",
+  handler: getGoogleAuthUrl,
 });

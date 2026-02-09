@@ -137,13 +137,13 @@ export function errorResponse(
 export function paginatedResponse<T>(
   data: { items: T[]; total: number; page: number; pageSize: number; hasMore: boolean }
 ): HttpResponseInit {
-  const body: ApiResponse<T[]> = {
+  const body: ApiResponse<{ data: T[]; total: number; page: number; pageSize: number; hasMore: boolean }> = {
     success: true,
-    data: data.items,
-    meta: {
+    data: {
+      data: data.items,
+      total: data.total,
       page: data.page,
       pageSize: data.pageSize,
-      total: data.total,
       hasMore: data.hasMore,
     },
   };

@@ -235,6 +235,82 @@ function AddStoreModal({
     setStep("details");
   }
 
+  const platformHints: Record<string, { urlPlaceholder: string; keyLabel: string; keyPlaceholder: string; secretLabel: string; secretPlaceholder: string; help: string }> = {
+    shopify: {
+      urlPlaceholder: "https://minhaloja.myshopify.com",
+      keyLabel: "Admin API Access Token",
+      keyPlaceholder: "shpat_xxxxxxxxxxxxxxxxxxxxxxxx",
+      secretLabel: "API Secret Key (opcional)",
+      secretPlaceholder: "shpss_xxxxxxxxxxxxxxxxxxxxxxxx",
+      help: "Vá em Shopify Admin → Configurações → Apps → Desenvolver apps → Criar app → Configurar Admin API → Instalar → Copiar o Access Token.",
+    },
+    woocommerce: {
+      urlPlaceholder: "https://minhaloja.com.br",
+      keyLabel: "Consumer Key",
+      keyPlaceholder: "ck_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      secretLabel: "Consumer Secret",
+      secretPlaceholder: "cs_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      help: "Vá em WP Admin → WooCommerce → Configurações → Avançado → REST API → Adicionar chave.",
+    },
+    vtex: {
+      urlPlaceholder: "https://minhaloja.vtexcommercestable.com.br",
+      keyLabel: "App Key",
+      keyPlaceholder: "vtexappkey-minhaloja-XXXXXX",
+      secretLabel: "App Token",
+      secretPlaceholder: "Token da API VTEX",
+      help: "Vá em VTEX Admin → Configurações da conta → Chaves de aplicação.",
+    },
+    magento: {
+      urlPlaceholder: "https://minhaloja.com.br",
+      keyLabel: "Access Token",
+      keyPlaceholder: "Token de integração do Magento",
+      secretLabel: "Consumer Secret (opcional)",
+      secretPlaceholder: "Secret do consumer",
+      help: "Vá em Magento Admin → Integrações → Adicionar Integração → Ativar → Copiar Access Token.",
+    },
+    nuvemshop: {
+      urlPlaceholder: "https://minhaloja.lojavirtualnuvem.com.br",
+      keyLabel: "Access Token",
+      keyPlaceholder: "Token de acesso Nuvemshop",
+      secretLabel: "",
+      secretPlaceholder: "",
+      help: "Use o app parceiro ou gere um token em Nuvemshop Admin → Apps.",
+    },
+    tray: {
+      urlPlaceholder: "https://minhaloja.commercesuite.com.br",
+      keyLabel: "API Key",
+      keyPlaceholder: "Chave de API da Tray",
+      secretLabel: "API Password",
+      secretPlaceholder: "Senha da API",
+      help: "Vá no painel Tray → Configurações → Integrações → API.",
+    },
+    lojaintegrada: {
+      urlPlaceholder: "https://minhaloja.lojaintegrada.com.br",
+      keyLabel: "API Key",
+      keyPlaceholder: "Chave de API Loja Integrada",
+      secretLabel: "",
+      secretPlaceholder: "",
+      help: "Vá no painel Loja Integrada → Configurações → Integrações → API.",
+    },
+    opencart: {
+      urlPlaceholder: "https://minhaloja.com.br",
+      keyLabel: "API Key",
+      keyPlaceholder: "Chave de API do OpenCart",
+      secretLabel: "API Secret",
+      secretPlaceholder: "Secret da API",
+      help: "Vá em OpenCart Admin → System → Users → API → Adicionar API.",
+    },
+  };
+
+  const hints = platformHints[platform] || {
+    urlPlaceholder: "https://minhaloja.com.br",
+    keyLabel: "API Key",
+    keyPlaceholder: "Chave de API da plataforma",
+    secretLabel: "API Password / Secret",
+    secretPlaceholder: "Senha ou secret da API",
+    help: "",
+  };
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
@@ -257,10 +333,10 @@ function AddStoreModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-lg rounded-xl bg-white shadow-xl">
+      <div className="w-full max-w-lg rounded-xl bg-white shadow-xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between border-b px-6 py-4">
           <h3 className="text-lg font-semibold">
-            {step === "platform" ? "Escolha a Plataforma" : "Detalhes da Loja"}
+            {step === "platform" ? "Escolha a Plataforma" : `Conectar ${PLATFORMS.find(p => p.id === platform)?.name || "Loja"}`}
           </h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <X className="h-5 w-5" />
@@ -287,6 +363,12 @@ function AddStoreModal({
                 <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>
               )}
 
+              {hints.help && (
+                <div className="rounded-lg bg-blue-50 p-3 text-xs text-blue-700">
+                  <strong>Como obter as credenciais:</strong> {hints.help}
+                </div>
+              )}
+
               <div>
                 <label className="block text-sm font-medium text-gray-700">
                   Nome da Loja
@@ -309,36 +391,38 @@ function AddStoreModal({
                   type="url"
                   value={form.storeUrl}
                   onChange={(e) => setForm((f) => ({ ...f, storeUrl: e.target.value }))}
-                  placeholder="https://minhaloja.com.br"
+                  placeholder={hints.urlPlaceholder}
                   required
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700">
-                  API Key
+                  {hints.keyLabel}
                 </label>
                 <input
                   className="input mt-1"
                   value={form.apiKey}
                   onChange={(e) => setForm((f) => ({ ...f, apiKey: e.target.value }))}
-                  placeholder="Chave de API da plataforma"
+                  placeholder={hints.keyPlaceholder}
                   required
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  API Password / Secret
-                </label>
-                <input
-                  className="input mt-1"
-                  type="password"
-                  value={form.apiPassword}
-                  onChange={(e) => setForm((f) => ({ ...f, apiPassword: e.target.value }))}
-                  placeholder="Senha ou secret da API"
-                />
-              </div>
+              {hints.secretLabel && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    {hints.secretLabel}
+                  </label>
+                  <input
+                    className="input mt-1"
+                    type="password"
+                    value={form.apiPassword}
+                    onChange={(e) => setForm((f) => ({ ...f, apiPassword: e.target.value }))}
+                    placeholder={hints.secretPlaceholder}
+                  />
+                </div>
+              )}
 
               <div className="flex items-center justify-end gap-3 pt-2">
                 <button

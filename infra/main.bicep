@@ -28,6 +28,10 @@ param stripeSecretKey string
 @secure()
 param stripeWebhookSecret string
 
+param stripePriceBasic string = ''
+param stripePricePro string = ''
+param stripePriceEnterprise string = ''
+
 @secure()
 param googleClientId string = ''
 
@@ -92,7 +96,7 @@ resource cosmosDatabase 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2024
 
 // Container definitions
 var containers = [
-  { name: 'tenants', partitionKey: '/id' }
+  { name: 'tenants', partitionKey: '/tenantId' }
   { name: 'stores', partitionKey: '/tenantId' }
   { name: 'products', partitionKey: '/tenantId' }
   { name: 'competitor-prices', partitionKey: '/ean' }
@@ -153,13 +157,18 @@ resource redis 'Microsoft.Cache/redis@2023-08-01' = {
 // ═══════════════════════════════════════════════════════════
 
 resource serviceBus 'Microsoft.ServiceBus/namespaces@2022-10-01-preview' = {
-  name: '${prefix}-sb'
+  name: '${prefix}-servicebus'
   location: location
   tags: tags
   sku: {
     name: environment == 'prod' ? 'Standard' : 'Basic'
     tier: environment == 'prod' ? 'Standard' : 'Basic'
   }
+}
+
+resource serviceBusAuthRule 'Microsoft.ServiceBus/namespaces/AuthorizationRules@2022-10-01-preview' existing = {
+  parent: serviceBus
+  name: 'RootManageSharedAccessKey'
 }
 
 var queues = [
@@ -260,7 +269,7 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         }
         {
           name: 'SERVICE_BUS_CONNECTION'
-          value: serviceBus.listKeys().primaryConnectionString
+          value: serviceBusAuthRule.listKeys().primaryConnectionString
         }
         {
           name: 'NODE_ENV'
@@ -330,11 +339,27 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
           name: 'STRIPE_WEBHOOK_SECRET'
           value: stripeWebhookSecret
         }
+        {
+          name: 'STRIPE_PRICE_BASIC'
+          value: stripePriceBasic
+        }
+        {
+          name: 'STRIPE_PRICE_PRO'
+          value: stripePricePro
+        }
+        {
+          name: 'STRIPE_PRICE_ENTERPRISE'
+          value: stripePriceEnterprise
+        }
       ]
       cors: {
         allowedOrigins: [
           'http://localhost:3000'
+          'http://localhost:5173'
           'https://${prefix}-web.azurestaticapps.net'
+          'https://ucpbr.com.br'
+          'https://www.ucpbr.com.br'
+          'https://app.ucpbr.com.br'
         ]
       }
     }

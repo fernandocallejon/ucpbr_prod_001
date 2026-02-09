@@ -6,6 +6,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
+    "dev:server": "tsx src/dev/server.ts",
     "start": "func start",
     "lint": "eslint src/",
     "test": "vitest run"
@@ -19,15 +20,20 @@
     "@retailnexus/shared": "*",
     "applicationinsights": "^3.13.0",
     "bcryptjs": "^2.4.3",
+    "cors": "^2.8.6",
     "csv-parse": "^5.6.0",
+    "express": "^5.2.1",
     "ioredis": "^5.4.0",
     "jsonwebtoken": "^9.0.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.0",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.0",
     "azure-functions-core-tools": "^4.0.0",
+    "tsx": "^4.21.0",
     "typescript": "^5.5.0",
     "vitest": "^2.0.0"
   }

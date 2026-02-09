@@ -23,6 +23,7 @@ import { validateBody } from "../middleware/validation.js";
 import { now, PLAN_LIMITS } from "@retailnexus/shared";
 import type { TenantSettings } from "@retailnexus/shared";
 import { z } from "zod";
+import { rateLimit } from "../middleware/rate-limit.js";
 
 // ─── Schemas ───
 
@@ -58,6 +59,9 @@ async function getTenant(
   if (isErr(authResult)) return authResult;
   const user = authResult;
 
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
+
   try {
     const tenant = await tenantRepository.getById(user.tenantId, user.tenantId);
     if (!tenant) return errorResponse("Tenant não encontrado", 404);
@@ -79,6 +83,9 @@ async function updateTenant(
   const authResult = requireAuth(req);
   if (isErr(authResult)) return authResult;
   const user = authResult;
+
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
 
   try {
     const validation = await validateBody(req, updateTenantSchema);
@@ -110,6 +117,9 @@ async function updateSettings(
   const authResult = requireAuth(req);
   if (isErr(authResult)) return authResult;
   const user = authResult;
+
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
 
   try {
     const validation = await validateBody(req, updateSettingsSchema);
@@ -159,6 +169,9 @@ async function getPlan(
   if (isErr(authResult)) return authResult;
   const user = authResult;
 
+  const limited = await rateLimit(req, "authenticated");
+  if (limited) return limited;
+
   try {
     const tenant = await tenantRepository.getById(user.tenantId, user.tenantId);
     if (!tenant) return errorResponse("Tenant não encontrado", 404);
@@ -207,4 +220,40 @@ app.http("tenant-plan", {
   authLevel: "anonymous",
   route: "tenant/plan",
   handler: getPlan,
+});
+
+// ─── Alias routes for frontend compatibility ───
+
+// GET /api/settings → returns tenant settings
+async function getSettingsAlias(
+  req: HttpRequest,
+  context: InvocationContext
+): Promise<HttpResponseInit> {
+  const authResult = requireAuth(req);
+  if (isErr(authResult)) return authResult;
+  const user = authResult;
+
+  try {
+    const tenant = await tenantRepository.getById(user.tenantId, user.tenantId);
+    if (!tenant) return errorResponse("Tenant não encontrado", 404);
+    return successResponse(tenant.settings || {});
+  } catch (err: any) {
+    context.error("getSettingsAlias error:", err);
+    return errorResponse("Erro interno", 500);
+  }
+}
+
+app.http("settings-get", {
+  methods: ["GET"],
+  authLevel: "anonymous",
+  route: "settings",
+  handler: getSettingsAlias,
+});
+
+// PUT /api/settings → update tenant settings
+app.http("settings-update", {
+  methods: ["PUT"],
+  authLevel: "anonymous",
+  route: "settings",
+  handler: updateSettings,
 });
