@@ -252,108 +252,35 @@ function AddStoreModal({
   onClose: () => void;
   onAdded: () => void;
 }) {
-  const [step, setStep] = useState<"platform" | "method" | "oauth" | "manual">("platform");
+  const [step, setStep] = useState<"platform" | "connect">("platform");
   const [platform, setPlatform] = useState("");
-  const [form, setForm] = useState({ storeName: "", storeUrl: "", apiKey: "", apiPassword: "" });
+  const [form, setForm] = useState({ storeName: "", storeUrl: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // Platforms that support OAuth/Bridge flow through API2Cart
-  const oAuthPlatforms = ["shopify", "woocommerce", "magento", "vtex", "nuvemshop", "opencart"];
+  const urlPlaceholders: Record<string, string> = {
+    shopify: "https://minhaloja.myshopify.com",
+    woocommerce: "https://minhaloja.com.br",
+    vtex: "https://minhaloja.vtexcommercestable.com.br",
+    magento: "https://minhaloja.com.br",
+    nuvemshop: "https://minhaloja.lojavirtualnuvem.com.br",
+    tray: "https://minhaloja.commercesuite.com.br",
+    lojaintegrada: "https://minhaloja.lojaintegrada.com.br",
+    opencart: "https://minhaloja.com.br",
+  };
 
   function selectPlatform(id: string) {
     setPlatform(id);
-    // If platform supports OAuth, show method selection; otherwise go straight to manual
-    if (oAuthPlatforms.includes(id)) {
-      setStep("method");
-    } else {
-      setStep("manual");
-    }
+    setStep("connect");
   }
 
-  const platformHints: Record<string, { urlPlaceholder: string; keyLabel: string; keyPlaceholder: string; secretLabel: string; secretPlaceholder: string; help: string }> = {
-    shopify: {
-      urlPlaceholder: "https://minhaloja.myshopify.com",
-      keyLabel: "Admin API Access Token",
-      keyPlaceholder: "shpat_xxxxxxxxxxxxxxxxxxxxxxxx",
-      secretLabel: "API Secret Key (opcional)",
-      secretPlaceholder: "shpss_xxxxxxxxxxxxxxxxxxxxxxxx",
-      help: "Vá em Shopify Admin → Configurações → Apps → Desenvolver apps → Criar app → Configurar Admin API → Instalar → Copiar o Access Token.",
-    },
-    woocommerce: {
-      urlPlaceholder: "https://minhaloja.com.br",
-      keyLabel: "Consumer Key",
-      keyPlaceholder: "ck_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-      secretLabel: "Consumer Secret",
-      secretPlaceholder: "cs_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-      help: "Vá em WP Admin → WooCommerce → Configurações → Avançado → REST API → Adicionar chave.",
-    },
-    vtex: {
-      urlPlaceholder: "https://minhaloja.vtexcommercestable.com.br",
-      keyLabel: "App Key",
-      keyPlaceholder: "vtexappkey-minhaloja-XXXXXX",
-      secretLabel: "App Token",
-      secretPlaceholder: "Token da API VTEX",
-      help: "Vá em VTEX Admin → Configurações da conta → Chaves de aplicação.",
-    },
-    magento: {
-      urlPlaceholder: "https://minhaloja.com.br",
-      keyLabel: "Access Token",
-      keyPlaceholder: "Token de integração do Magento",
-      secretLabel: "Consumer Secret (opcional)",
-      secretPlaceholder: "Secret do consumer",
-      help: "Vá em Magento Admin → Integrações → Adicionar Integração → Ativar → Copiar Access Token.",
-    },
-    nuvemshop: {
-      urlPlaceholder: "https://minhaloja.lojavirtualnuvem.com.br",
-      keyLabel: "Access Token",
-      keyPlaceholder: "Token de acesso Nuvemshop",
-      secretLabel: "",
-      secretPlaceholder: "",
-      help: "Use o app parceiro ou gere um token em Nuvemshop Admin → Apps.",
-    },
-    tray: {
-      urlPlaceholder: "https://minhaloja.commercesuite.com.br",
-      keyLabel: "API Key",
-      keyPlaceholder: "Chave de API da Tray",
-      secretLabel: "API Password",
-      secretPlaceholder: "Senha da API",
-      help: "Vá no painel Tray → Configurações → Integrações → API.",
-    },
-    lojaintegrada: {
-      urlPlaceholder: "https://minhaloja.lojaintegrada.com.br",
-      keyLabel: "API Key",
-      keyPlaceholder: "Chave de API Loja Integrada",
-      secretLabel: "",
-      secretPlaceholder: "",
-      help: "Vá no painel Loja Integrada → Configurações → Integrações → API.",
-    },
-    opencart: {
-      urlPlaceholder: "https://minhaloja.com.br",
-      keyLabel: "API Key",
-      keyPlaceholder: "Chave de API do OpenCart",
-      secretLabel: "API Secret",
-      secretPlaceholder: "Secret da API",
-      help: "Vá em OpenCart Admin → System → Users → API → Adicionar API.",
-    },
-  };
-
-  const hints = platformHints[platform] || {
-    urlPlaceholder: "https://minhaloja.com.br",
-    keyLabel: "API Key",
-    keyPlaceholder: "Chave de API da plataforma",
-    secretLabel: "API Password / Secret",
-    secretPlaceholder: "Senha ou secret da API",
-    help: "",
-  };
-
-  async function handleOAuthConnect(e: React.FormEvent) {
+  async function handleConnect(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     setLoading(true);
     try {
       const res = await api.post<{
-        store: StoreItem;
+        store: any;
         bridgeDownloadUrl: string | null;
         needsBridgeFile: boolean;
         message: string;
@@ -362,37 +289,16 @@ function AddStoreModal({
         storeName: form.storeName,
         storeUrl: form.storeUrl,
       });
-      // If self-hosted platform needs bridge file, show instructions
+      // Self-hosted platforms may need bridge file installed on server
       if (res.needsBridgeFile && res.bridgeDownloadUrl) {
-        setError("");
         alert(
-          `Loja conectada! Para plataformas self-hosted (${platformName}), instale o conector bridge:\n\n${res.bridgeDownloadUrl}\n\nBaixe o arquivo e faça upload para a raiz do seu servidor.`
+          `Loja conectada!\n\nPara completar a integração com ${platformName}, baixe e instale o conector bridge no servidor da sua loja:\n\n${res.bridgeDownloadUrl}`
         );
       }
       onAdded();
       onClose();
     } catch (err: any) {
-      setError(err.message || "Erro ao conectar loja via bridge");
-      setLoading(false);
-    }
-  }
-
-  async function handleManualConnect(e: React.FormEvent) {
-    e.preventDefault();
-    setError("");
-    setLoading(true);
-    try {
-      await api.post("/api/stores", {
-        platform,
-        storeName: form.storeName,
-        storeUrl: form.storeUrl,
-        credentials: { apiKey: form.apiKey, apiPassword: form.apiPassword },
-      });
-      onAdded();
-      onClose();
-    } catch (err: any) {
       setError(err.message || "Erro ao conectar loja");
-    } finally {
       setLoading(false);
     }
   }
@@ -404,10 +310,7 @@ function AddStoreModal({
       <div className="w-full max-w-lg rounded-xl bg-white shadow-xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between border-b px-6 py-4">
           <h3 className="text-lg font-semibold">
-            {step === "platform" && "Escolha a Plataforma"}
-            {step === "method" && `Conectar ${platformName}`}
-            {step === "oauth" && `Conexão Rápida — ${platformName}`}
-            {step === "manual" && `Credenciais Manuais — ${platformName}`}
+            {step === "platform" ? "Escolha a Plataforma" : `Conectar ${platformName}`}
           </h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <X className="h-5 w-5" />
@@ -415,8 +318,7 @@ function AddStoreModal({
         </div>
 
         <div className="p-6">
-          {/* Step 1: Platform Selection */}
-          {step === "platform" && (
+          {step === "platform" ? (
             <div className="grid grid-cols-2 gap-3">
               {PLATFORMS.map((p) => (
                 <button
@@ -429,77 +331,15 @@ function AddStoreModal({
                 </button>
               ))}
             </div>
-          )}
-
-          {/* Step 2: Connection Method Selection (OAuth vs Manual) */}
-          {step === "method" && (
-            <div className="space-y-4">
-              <p className="text-sm text-gray-600">
-                Escolha como deseja conectar sua loja <strong>{platformName}</strong>:
-              </p>
-
-              <button
-                onClick={() => setStep("oauth")}
-                className="w-full rounded-lg border-2 border-brand-200 bg-brand-50 px-4 py-4 text-left transition hover:border-brand-500"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-100 text-brand-600">
-                    <ExternalLink className="h-5 w-5" />
-                  </span>
-                  <div>
-                    <p className="font-semibold text-gray-900">
-                      Conexão Rápida
-                      <span className="ml-2 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
-                        Recomendado
-                      </span>
-                    </p>
-                    <p className="mt-0.5 text-xs text-gray-500">
-                      Conecte informando apenas nome e URL. A API2Cart configura a integração automaticamente.
-                    </p>
-                  </div>
-                </div>
-              </button>
-
-              <button
-                onClick={() => setStep("manual")}
-                className="w-full rounded-lg border-2 border-gray-200 px-4 py-4 text-left transition hover:border-gray-400"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-gray-500">
-                    🔑
-                  </span>
-                  <div>
-                    <p className="font-semibold text-gray-900">
-                      Credenciais Manuais
-                    </p>
-                    <p className="mt-0.5 text-xs text-gray-500">
-                      Insira manualmente as chaves de API da sua loja. Use se o OAuth não funcionar.
-                    </p>
-                  </div>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                className="btn-secondary w-full"
-                onClick={() => { setPlatform(""); setStep("platform"); }}
-              >
-                ← Voltar
-              </button>
-            </div>
-          )}
-
-          {/* Step 3a: OAuth Flow (simplified form — just name + URL) */}
-          {step === "oauth" && (
-            <form onSubmit={handleOAuthConnect} className="space-y-4">
+          ) : (
+            <form onSubmit={handleConnect} className="space-y-4">
               {error && (
                 <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>
               )}
 
-              <div className="rounded-lg bg-green-50 border border-green-200 p-3 text-xs text-green-700">
-                <strong>Como funciona:</strong> Informe o nome e a URL da sua loja.
-                A API2Cart criará a conexão automaticamente. Para plataformas como
-                WooCommerce e Magento, pode ser necessário instalar um conector no servidor.
+              <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 text-xs text-blue-700">
+                <strong>Conexão automática via API2Cart:</strong> Informe o nome e a URL da sua loja.
+                A integração será configurada automaticamente pela API2Cart.
               </div>
 
               <div>
@@ -524,7 +364,7 @@ function AddStoreModal({
                   type="url"
                   value={form.storeUrl}
                   onChange={(e) => setForm((f) => ({ ...f, storeUrl: e.target.value }))}
-                  placeholder={hints.urlPlaceholder}
+                  placeholder={urlPlaceholders[platform] || "https://minhaloja.com.br"}
                   required
                 />
               </div>
@@ -533,7 +373,7 @@ function AddStoreModal({
                 <button
                   type="button"
                   className="btn-secondary"
-                  onClick={() => setStep("method")}
+                  onClick={() => { setPlatform(""); setStep("platform"); }}
                 >
                   Voltar
                 </button>
@@ -544,94 +384,8 @@ function AddStoreModal({
                       Conectando...
                     </>
                   ) : (
-                    <>
-                      <ExternalLink className="mr-2 h-4 w-4" />
-                      Conectar {platformName}
-                    </>
+                    "Conectar Loja"
                   )}
-                </button>
-              </div>
-            </form>
-          )}
-
-          {/* Step 3b: Manual Credentials */}
-          {step === "manual" && (
-            <form onSubmit={handleManualConnect} className="space-y-4">
-              {error && (
-                <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>
-              )}
-
-              {hints.help && (
-                <div className="rounded-lg bg-blue-50 p-3 text-xs text-blue-700">
-                  <strong>Como obter as credenciais:</strong> {hints.help}
-                </div>
-              )}
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  Nome da Loja
-                </label>
-                <input
-                  className="input mt-1"
-                  value={form.storeName}
-                  onChange={(e) => setForm((f) => ({ ...f, storeName: e.target.value }))}
-                  placeholder="Minha Loja Online"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  URL da Loja
-                </label>
-                <input
-                  className="input mt-1"
-                  type="url"
-                  value={form.storeUrl}
-                  onChange={(e) => setForm((f) => ({ ...f, storeUrl: e.target.value }))}
-                  placeholder={hints.urlPlaceholder}
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  {hints.keyLabel}
-                </label>
-                <input
-                  className="input mt-1"
-                  value={form.apiKey}
-                  onChange={(e) => setForm((f) => ({ ...f, apiKey: e.target.value }))}
-                  placeholder={hints.keyPlaceholder}
-                  required
-                />
-              </div>
-
-              {hints.secretLabel && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">
-                    {hints.secretLabel}
-                  </label>
-                  <input
-                    className="input mt-1"
-                    type="password"
-                    value={form.apiPassword}
-                    onChange={(e) => setForm((f) => ({ ...f, apiPassword: e.target.value }))}
-                    placeholder={hints.secretPlaceholder}
-                  />
-                </div>
-              )}
-
-              <div className="flex items-center justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => oAuthPlatforms.includes(platform) ? setStep("method") : setStep("platform")}
-                >
-                  Voltar
-                </button>
-                <button type="submit" className="btn-primary" disabled={loading}>
-                  {loading ? "Conectando..." : "Conectar Loja"}
                 </button>
               </div>
             </form>

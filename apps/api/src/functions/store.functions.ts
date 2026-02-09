@@ -1,8 +1,7 @@
 // ============================================================
 // RetailNexus — Store Functions (HTTP Triggers)
 // GET    /api/stores
-// POST   /api/stores/connect          ← manual credentials
-// POST   /api/stores/bridge           ← quick connect via API2Cart bridge
+// POST   /api/stores                  ← connect via API2Cart bridge
 // GET    /api/stores/:storeId
 // DELETE /api/stores/:storeId
 // POST   /api/stores/:storeId/sync
@@ -30,33 +29,13 @@ import { getApi2CartService } from "../services/api2cart.service.js";
 import { getStoreSyncService } from "../services/store-sync.service.js";
 import { sendToQueue } from "../lib/service-bus.js";
 import { generateId, now, PLAN_LIMITS, SERVICE_BUS_QUEUES } from "@retailnexus/shared";
-import type { Store, ConnectStoreInput } from "@retailnexus/shared";
+import type { Store } from "@retailnexus/shared";
 import { z } from "zod";
 import { rateLimit } from "../middleware/rate-limit.js";
 
 // ─── Schemas ───
 
-const connectStoreSchema = z.object({
-  platform: z.enum([
-    "shopify",
-    "woocommerce",
-    "magento",
-    "vtex",
-    "nuvemshop",
-    "tray",
-    "loja_integrada",
-    "opencart",
-    "other",
-  ]),
-  storeName: z.string().min(2).max(100),
-  storeUrl: z.string().url(),
-  credentials: z.object({
-    apiKey: z.string().min(1),
-    apiPassword: z.string().optional(),
-  }),
-});
-
-const bridgeStoreSchema = z.object({
+const storeSchema = z.object({
   platform: z.enum([
     "shopify",
     "woocommerce",
@@ -115,95 +94,6 @@ async function listStores(
   } catch (err: any) {
     context.error("listStores error:", err);
     return errorResponse("Erro interno", 500);
-  }
-}
-
-// ─── Connect Store ───
-
-async function connectStore(
-  req: HttpRequest,
-  context: InvocationContext
-): Promise<HttpResponseInit> {
-  const authResult = requireAuth(req);
-  if (isErr(authResult)) return authResult;
-  const user = authResult;
-
-  const limited = await rateLimit(req, "authenticated");
-  if (limited) return limited;
-
-  try {
-    const validation = await validateBody(req, connectStoreSchema);
-    if (isErr(validation)) return validation;
-    const body = validation;
-
-    // Check plan limits
-    const tenant = await tenantRepository.getById(user.tenantId, user.tenantId);
-    if (!tenant) return errorResponse("Tenant não encontrado", 404);
-
-    const limits = PLAN_LIMITS[tenant.plan];
-    const currentCount = await storeRepository.countByTenant(user.tenantId);
-    if (currentCount >= limits.maxStores) {
-      return errorResponse(
-        `Limite de lojas atingido para o plano ${tenant.plan} (${limits.maxStores})`,
-        400
-      );
-    }
-
-    // Create API2Cart connection
-    const api2cart = getApi2CartService();
-    const cartType = PLATFORM_TO_CART_TYPE[body.platform] || body.platform;
-    let storeKey: string;
-    try {
-      const connection = await api2cart.createConnection({
-        cartType,
-        storeUrl: body.storeUrl,
-        apiKey: body.credentials.apiKey,
-        apiSecret: body.credentials.apiPassword,
-        accessToken: body.credentials.apiKey, // Some platforms use access_token
-      });
-      storeKey = connection.store_key;
-    } catch (err: any) {
-      context.warn("API2Cart createConnection failed:", err.message);
-      return errorResponse(
-        "Não foi possível conectar à loja. Verifique as credenciais e URL.",
-        400
-      );
-    }
-
-    const store: any = {
-      id: generateId(),
-      tenantId: user.tenantId,
-      type: "store",
-      name: body.storeName,
-      url: body.storeUrl,
-      platform: body.platform,
-      api2cartStoreKey: storeKey,
-      syncStatus: "pending",
-      lastSyncAt: null,
-      productCount: 0,
-      createdAt: now(),
-      updatedAt: now(),
-    };
-
-    await storeRepository.create(store);
-
-    // Update tenant store count
-    await tenantRepository.update(user.tenantId, user.tenantId, {
-      storeCount: currentCount + 1,
-      updatedAt: now(),
-    });
-
-    // Trigger initial sync via Service Bus
-    await sendToQueue(SERVICE_BUS_QUEUES.STORE_SYNC, {
-      storeId: store.id,
-      tenantId: user.tenantId,
-      action: "full_sync",
-    });
-
-    return successResponse(store, 201);
-  } catch (err: any) {
-    context.error("connectStore error:", err);
-    return errorResponse("Erro ao conectar loja", 500);
   }
 }
 
@@ -351,20 +241,17 @@ async function getStoreStatus(
   }
 }
 
-// ─── Bridge: Quick Connect (no credentials needed) ───
+// ─── Connect Store (via API2Cart Bridge) ───
 
 /**
- * POST /api/stores/bridge
- * Uses API2Cart's Bridge connection to quickly create a store connection
- * without requiring manual API key entry.
- * 
- * For SaaS platforms (Shopify, Nuvemshop): connection is created but
- * full data access may require the bridge connector or API keys.
+ * POST /api/stores
+ * Uses API2Cart Bridge to automatically create a store connection.
+ * No manual API keys needed — everything through API2Cart.
  * 
  * For self-hosted platforms (WooCommerce, Magento, OpenCart): returns
  * a bridge connector download URL that must be installed on the store's server.
  */
-async function initiateBridge(
+async function connectStore(
   req: HttpRequest,
   context: InvocationContext
 ): Promise<HttpResponseInit> {
@@ -376,7 +263,7 @@ async function initiateBridge(
   if (limited) return limited;
 
   try {
-    const validation = await validateBody(req, bridgeStoreSchema);
+    const validation = await validateBody(req, storeSchema);
     if (isErr(validation)) return validation;
     const body = validation;
 
@@ -410,13 +297,13 @@ async function initiateBridge(
     } catch (err: any) {
       context.warn("API2Cart bridge connection failed:", err.message);
       return errorResponse(
-        "Não foi possível criar a conexão via bridge. Tente usar credenciais manuais.",
+        "Não foi possível criar a conexão via API2Cart. Verifique a URL da loja e tente novamente.",
         400
       );
     }
 
     if (!storeKey) {
-      return errorResponse("API2Cart não retornou store_key. Tente credenciais manuais.", 400);
+      return errorResponse("API2Cart não retornou store_key. Tente novamente.", 400);
     }
 
     // Save the store immediately
@@ -454,7 +341,7 @@ async function initiateBridge(
       // Non-critical
     }
 
-    context.log(`Store created via bridge: id=${store.id}, platform=${body.platform}`);
+    context.log(`Store connected via API2Cart: id=${store.id}, platform=${body.platform}`);
 
     // Determine if platform needs bridge file installation
     const selfHostedPlatforms = ["woocommerce", "magento", "opencart"];
@@ -470,7 +357,7 @@ async function initiateBridge(
     }, 201);
   } catch (err: any) {
     context.error("initiateBridge error:", err);
-    return errorResponse("Erro ao conectar loja via bridge", 500);
+    return errorResponse("Erro ao conectar loja", 500);
   }
 }
 
@@ -483,13 +370,6 @@ app.http("stores-list", {
   handler: listStores,
 });
 
-app.http("stores-connect", {
-  methods: ["POST"],
-  authLevel: "anonymous",
-  route: "stores/connect",
-  handler: connectStore,
-});
-
 app.http("stores-create", {
   methods: ["POST"],
   authLevel: "anonymous",
@@ -497,11 +377,12 @@ app.http("stores-create", {
   handler: connectStore,
 });
 
+// Keep /stores/bridge as alias for backwards compatibility
 app.http("stores-bridge", {
   methods: ["POST"],
   authLevel: "anonymous",
   route: "stores/bridge",
-  handler: initiateBridge,
+  handler: connectStore,
 });
 
 app.http("stores-get", {
