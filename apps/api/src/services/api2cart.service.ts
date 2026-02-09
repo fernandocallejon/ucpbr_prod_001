@@ -47,21 +47,24 @@ export class Api2CartService {
   // ─── Store Connection ───
 
   /**
-   * Create a store (cart) connection in API2Cart.
+   * Create a store (cart) connection in API2Cart using cart.create.json.
+   * For Shopify: use accessToken (from Custom App).
+   * For other SaaS platforms: use appropriate credentials.
+   * Note: api_key in the POST body is the API2Cart key (set by this.post).
    */
   async createConnection(params: {
     cartType: string;
     storeUrl: string;
-    apiKey?: string;
-    apiSecret?: string;
     accessToken?: string;
+    shopifyApiKey?: string;
+    shopifyApiPassword?: string;
   }): Promise<{ store_key: string }> {
     return this.post("cart.create.json", {
       cart_id: params.cartType,
       store_url: params.storeUrl,
-      api_key: params.apiKey,
-      api_secret: params.apiSecret,
       access_token: params.accessToken,
+      ApiKey: params.shopifyApiKey,
+      ApiPass: params.shopifyApiPassword,
     });
   }
 
@@ -74,13 +77,13 @@ export class Api2CartService {
 
   /**
    * Get a Bridge connection from API2Cart.
-   * This creates the connection immediately and returns:
-   * - store_key: the connection key for API calls
-   * - bridge: URL to download the bridge connector file
-   *   (needed for self-hosted platforms like WooCommerce, Magento, OpenCart)
    *
-   * For SaaS platforms (Shopify, Nuvemshop), credentials are still needed
-   * via cart.create.json for full data access.
+   * For self-hosted platforms (WooCommerce, Magento, OpenCart):
+   *   Returns store_key + bridge (download URL for bridge connector file)
+   *   The bridge file must be installed on the store's server.
+   *
+   * Note: This does NOT work for SaaS platforms (Shopify, etc).
+   * For Shopify, use createConnection() with an accessToken instead.
    *
    * @see https://docs.api2cart.com/#cart-bridge
    */

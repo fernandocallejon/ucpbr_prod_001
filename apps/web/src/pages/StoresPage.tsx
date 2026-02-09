@@ -10,7 +10,6 @@ import {
   RefreshCw,
   CheckCircle2,
   XCircle,
-  Clock,
   ExternalLink,
   Trash2,
   X,
@@ -60,22 +59,12 @@ export default function StoresPage() {
   const [syncing, setSyncing] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState("");
 
+  const [errorMsg, setErrorMsg] = useState("");
+
   useEffect(() => {
     loadStores();
 
-    // Check if we just came back from OAuth bridge
-    const params = new URLSearchParams(window.location.search);
-    const connectedId = params.get("connected");
-    const error = params.get("error");
-    if (connectedId) {
-      setSuccessMsg("Loja conectada com sucesso via OAuth! A sincronização inicial foi iniciada.");
-      // Clean up URL
-      window.history.replaceState({}, "", window.location.pathname);
-    } else if (error) {
-      setSuccessMsg("");
-      // Could show error, for now just clean URL
-      window.history.replaceState({}, "", window.location.pathname);
-    }
+
   }, []);
 
   async function loadStores() {
@@ -136,6 +125,19 @@ export default function StoresPage() {
             {successMsg}
           </div>
           <button onClick={() => setSuccessMsg("")} className="text-green-500 hover:text-green-700">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Error Banner */}
+      {errorMsg && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <XCircle className="h-5 w-5 text-red-600" />
+            {errorMsg}
+          </div>
+          <button onClick={() => setErrorMsg("")} className="text-red-500 hover:text-red-700">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -254,9 +256,13 @@ function AddStoreModal({
 }) {
   const [step, setStep] = useState<"platform" | "connect">("platform");
   const [platform, setPlatform] = useState("");
-  const [form, setForm] = useState({ storeName: "", storeUrl: "" });
+  const [form, setForm] = useState({ storeName: "", storeUrl: "", accessToken: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [showTokenGuide, setShowTokenGuide] = useState(false);
+
+  const isTokenPlatform = platform === "shopify";
+  const isBridgePlatform = ["woocommerce", "magento", "opencart"].includes(platform);
 
   const urlPlaceholders: Record<string, string> = {
     shopify: "https://minhaloja.myshopify.com",
@@ -277,18 +283,30 @@ function AddStoreModal({
   async function handleConnect(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+
+    if (isTokenPlatform && !form.accessToken.trim()) {
+      setError("O Access Token do Shopify é obrigatório. Siga o guia abaixo para obtê-lo.");
+      return;
+    }
+
     setLoading(true);
     try {
+      const payload: any = {
+        platform,
+        storeName: form.storeName,
+        storeUrl: form.storeUrl,
+      };
+      if (isTokenPlatform) {
+        payload.accessToken = form.accessToken.trim();
+      }
+
       const res = await api.post<{
         store: any;
         bridgeDownloadUrl: string | null;
         needsBridgeFile: boolean;
         message: string;
-      }>("/api/stores/bridge", {
-        platform,
-        storeName: form.storeName,
-        storeUrl: form.storeUrl,
-      });
+      }>("/api/stores/bridge", payload);
+
       // Self-hosted platforms may need bridge file installed on server
       if (res.needsBridgeFile && res.bridgeDownloadUrl) {
         alert(
@@ -337,10 +355,57 @@ function AddStoreModal({
                 <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>
               )}
 
+              {/* Info box based on platform type */}
               <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 text-xs text-blue-700">
-                <strong>Conexão automática via API2Cart:</strong> Informe o nome e a URL da sua loja.
-                A integração será configurada automaticamente pela API2Cart.
+                {isTokenPlatform ? (
+                  <>
+                    <strong>Conexão via API2Cart:</strong> Para conectar sua loja Shopify, você precisa
+                    criar um Custom App no painel admin do Shopify e fornecer o Access Token.
+                    {" "}
+                    <button
+                      type="button"
+                      className="underline font-semibold"
+                      onClick={() => setShowTokenGuide(!showTokenGuide)}
+                    >
+                      {showTokenGuide ? "Ocultar guia" : "Ver passo a passo"}
+                    </button>
+                  </>
+                ) : isBridgePlatform ? (
+                  <>
+                    <strong>Conexão via Bridge:</strong> Após conectar, você receberá um arquivo bridge
+                    para instalar no servidor da sua loja. A API2Cart usará este arquivo para acessar os dados.
+                  </>
+                ) : (
+                  <>
+                    <strong>Conexão automática via API2Cart:</strong> Informe o nome e a URL da sua loja.
+                    A integração será configurada automaticamente.
+                  </>
+                )}
               </div>
+
+              {/* Shopify Token Guide */}
+              {isTokenPlatform && showTokenGuide && (
+                <div className="rounded-lg bg-gray-50 border border-gray-200 p-4 text-xs text-gray-700 space-y-2">
+                  <p className="font-semibold text-sm text-gray-900">Como obter o Access Token do Shopify:</p>
+                  <ol className="list-decimal list-inside space-y-1.5">
+                    <li>No admin do Shopify, vá em <strong>Configurações</strong> → <strong>Apps e canais de vendas</strong></li>
+                    <li>Clique em <strong>Desenvolver apps</strong> (canto superior)</li>
+                    <li>Clique <strong>Criar um app</strong> → dê o nome "RetailNexus"</li>
+                    <li>Em <strong>Configurar escopos da Admin API</strong>, selecione:
+                      <ul className="ml-4 mt-1 list-disc text-gray-500">
+                        <li><code className="bg-gray-200 px-1 rounded">read_products</code></li>
+                        <li><code className="bg-gray-200 px-1 rounded">read_inventory</code></li>
+                        <li><code className="bg-gray-200 px-1 rounded">read_product_listings</code></li>
+                      </ul>
+                    </li>
+                    <li>Clique <strong>Instalar app</strong> e confirme</li>
+                    <li>Copie o <strong>Admin API access token</strong> e cole abaixo</li>
+                  </ol>
+                  <p className="text-gray-500 mt-2 italic">
+                    O token só aparece uma vez — guarde-o em local seguro!
+                  </p>
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700">
@@ -369,11 +434,31 @@ function AddStoreModal({
                 />
               </div>
 
+              {/* Access Token field for Shopify */}
+              {isTokenPlatform && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Access Token (Admin API)
+                  </label>
+                  <input
+                    className="input mt-1 font-mono text-sm"
+                    type="password"
+                    value={form.accessToken}
+                    onChange={(e) => setForm((f) => ({ ...f, accessToken: e.target.value }))}
+                    placeholder="shpat_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                    required
+                  />
+                  <p className="mt-1 text-xs text-gray-400">
+                    Token do Custom App criado no painel admin do Shopify
+                  </p>
+                </div>
+              )}
+
               <div className="flex items-center justify-end gap-3 pt-2">
                 <button
                   type="button"
                   className="btn-secondary"
-                  onClick={() => { setPlatform(""); setStep("platform"); }}
+                  onClick={() => { setPlatform(""); setStep("platform"); setShowTokenGuide(false); }}
                 >
                   Voltar
                 </button>

@@ -49,7 +49,15 @@ const storeSchema = z.object({
   ]),
   storeName: z.string().min(2).max(100),
   storeUrl: z.string().url(),
+  // Shopify requires an access token from the Custom App
+  accessToken: z.string().min(10).optional(),
 });
+
+// Platforms that require access token (SaaS/OAuth based)
+const TOKEN_PLATFORMS = ["shopify"];
+
+// Platforms that use bridge file (self-hosted)
+const BRIDGE_PLATFORMS = ["woocommerce", "magento", "opencart"];
 
 // Map our platform IDs to API2Cart cart type identifiers
 const PLATFORM_TO_CART_TYPE: Record<string, string> = {
@@ -241,15 +249,21 @@ async function getStoreStatus(
   }
 }
 
-// ─── Connect Store (via API2Cart Bridge) ───
+// ─── Connect Store (via API2Cart) ───
 
 /**
  * POST /api/stores
- * Uses API2Cart Bridge to automatically create a store connection.
- * No manual API keys needed — everything through API2Cart.
- * 
- * For self-hosted platforms (WooCommerce, Magento, OpenCart): returns
- * a bridge connector download URL that must be installed on the store's server.
+ * Connects a store via API2Cart.
+ *
+ * Two flows depending on platform:
+ *
+ * 1) Token-based (Shopify):
+ *    User provides accessToken (from Shopify Custom App).
+ *    We call cart.create.json with the token.
+ *
+ * 2) Bridge-based (WooCommerce, Magento, OpenCart):
+ *    We call cart.bridge.json. Returns a bridge ZIP the user must install
+ *    on their store's server for API2Cart to access the data.
  */
 async function connectStore(
   req: HttpRequest,
@@ -267,6 +281,14 @@ async function connectStore(
     if (isErr(validation)) return validation;
     const body = validation;
 
+    // Shopify requires access token
+    if (TOKEN_PLATFORMS.includes(body.platform) && !body.accessToken) {
+      return errorResponse(
+        "Para conectar o Shopify, é necessário fornecer o Access Token do Custom App. Veja as instruções no painel.",
+        400
+      );
+    }
+
     // Check plan limits
     const tenant = await tenantRepository.getById(user.tenantId, user.tenantId);
     if (!tenant) return errorResponse("Tenant não encontrado", 404);
@@ -280,33 +302,55 @@ async function connectStore(
       );
     }
 
-    // Create bridge connection via API2Cart
     const api2cart = getApi2CartService();
     const cartType = PLATFORM_TO_CART_TYPE[body.platform] || body.platform;
 
     let storeKey: string;
-    let bridgeDownloadUrl: string;
-    try {
-      const bridgeResult = await api2cart.getBridgeConnection({
-        cartType,
-        storeUrl: body.storeUrl,
-        storeName: body.storeName,
-      });
-      storeKey = bridgeResult.store_key;
-      bridgeDownloadUrl = bridgeResult.bridge_url;
-    } catch (err: any) {
-      context.warn("API2Cart bridge connection failed:", err.message);
-      return errorResponse(
-        "Não foi possível criar a conexão via API2Cart. Verifique a URL da loja e tente novamente.",
-        400
-      );
+    let bridgeDownloadUrl: string | null = null;
+    const needsBridgeFile = BRIDGE_PLATFORMS.includes(body.platform);
+
+    if (TOKEN_PLATFORMS.includes(body.platform)) {
+      // ──── Token-based flow (Shopify) ────
+      try {
+        const result = await api2cart.createConnection({
+          cartType,
+          storeUrl: body.storeUrl,
+          accessToken: body.accessToken,
+        });
+        storeKey = result.store_key;
+      } catch (err: any) {
+        context.warn("API2Cart createConnection failed:", err.message);
+        return errorResponse(
+          "Não foi possível conectar a loja. Verifique se o Access Token e a URL estão corretos.",
+          400
+        );
+      }
+    } else {
+      // ──── Bridge flow (WooCommerce, Magento, OpenCart, etc.) ────
+      try {
+        const bridgeResult = await api2cart.getBridgeConnection({
+          cartType,
+          storeUrl: body.storeUrl,
+          storeName: body.storeName,
+        });
+        storeKey = bridgeResult.store_key;
+        if (needsBridgeFile) {
+          bridgeDownloadUrl = bridgeResult.bridge_url;
+        }
+      } catch (err: any) {
+        context.warn("API2Cart bridge connection failed:", err.message);
+        return errorResponse(
+          "Não foi possível criar a conexão via API2Cart. Verifique a URL da loja e tente novamente.",
+          400
+        );
+      }
     }
 
     if (!storeKey) {
       return errorResponse("API2Cart não retornou store_key. Tente novamente.", 400);
     }
 
-    // Save the store immediately
+    // Save the store
     const store: any = {
       id: generateId(),
       tenantId: user.tenantId,
@@ -341,22 +385,18 @@ async function connectStore(
       // Non-critical
     }
 
-    context.log(`Store connected via API2Cart: id=${store.id}, platform=${body.platform}`);
-
-    // Determine if platform needs bridge file installation
-    const selfHostedPlatforms = ["woocommerce", "magento", "opencart"];
-    const needsBridgeFile = selfHostedPlatforms.includes(body.platform);
+    context.log(`Store connected via API2Cart: id=${store.id}, platform=${body.platform}, method=${TOKEN_PLATFORMS.includes(body.platform) ? "token" : "bridge"}`);
 
     return successResponse({
       store,
-      bridgeDownloadUrl: needsBridgeFile ? bridgeDownloadUrl : null,
+      bridgeDownloadUrl,
       needsBridgeFile,
       message: needsBridgeFile
         ? "Loja conectada! Para completar a integração, instale o conector bridge no servidor da loja."
         : "Loja conectada com sucesso! A sincronização será iniciada em breve.",
     }, 201);
   } catch (err: any) {
-    context.error("initiateBridge error:", err);
+    context.error("connectStore error:", err);
     return errorResponse("Erro ao conectar loja", 500);
   }
 }
